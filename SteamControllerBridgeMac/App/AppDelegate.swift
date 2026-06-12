@@ -58,6 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 gamepad.send(output.report)
             }
             keyboardMouse.apply(keys: output.keys, mouseButtons: output.mouseButtons)
+            keyboardMouse.moveMouse(dx: output.mouseDX, dy: output.mouseDY)
         }
         controller.onStateChange = { [weak self] state in
             self?.connection = state

@@ -111,6 +111,17 @@ keyboard/mouse outputs too. The `padSticks` and `gyro` sections tune
 trackpad-stick deadzone/sensitivity and gyro aiming (activation threshold,
 deadzone, sensitivity), or disable either feature.
 
+**Trackpad as mouse:** set `padMouse.enabled` to `true` to make a pad drive
+the macOS cursor laptop-trackpad style (finger-travel deltas). `pad` picks
+`"left"` or `"right"` (the chosen pad stops acting as a stick);
+`sensitivityDivisor` controls speed (lower = faster, default 65). Combine
+with `"rightPadClick": { "output": "mouse:left" }` for tap-to-click.
+
+**Gyro as mouse:** set `gyro.output` to `"mouse"` to aim the cursor with the
+gyro instead of the right stick (while the left trigger is held);
+`mouseSensitivity` scales it (default 0.018). Both mouse modes require the
+Accessibility permission, like key bindings.
+
 ## Default layout
 
 ABXY, bumpers, stick clicks, and d-pad map 1:1. View→Back, Menu→Start,

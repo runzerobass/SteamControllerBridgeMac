@@ -7,6 +7,9 @@ struct MappedOutput {
     var report = GamepadReport()
     var keys: Set<CGKeyCode> = []
     var mouseButtons: Set<MouseButton> = []
+    /// Cursor movement in pixels for this frame (pad-mouse + gyro-mouse).
+    var mouseDX = 0.0
+    var mouseDY = 0.0
 }
 
 /// Translates parsed controller state into mapped output, driven by the
@@ -28,10 +31,17 @@ final class MappingEngine {
     private var padSticksEnabled = true
     private var padDeadZone = 800
     private var padSensitivity = 100
+    private var padMouseEnabled = false
+    private var padMouseIsRight = true
+    private var padMouseDivisor = 65
     private var gyroEnabled = true
+    private var gyroToMouse = false
     private var gyroActivationThreshold: UInt8 = 64
     private var gyroDeadZone = 45
     private var gyroSensitivity = 26
+    private var gyroMouseSensitivity = 0.018
+    /// Max cursor movement per report from gyro (pixels), from the Windows app.
+    private let gyroMouseClamp = 24.0
     /// Bias learning weights from the Windows app: fast on activation,
     /// slow drift-tracking while inactive.
     private let gyroBiasFastWeight = 0.65
@@ -40,6 +50,9 @@ final class MappingEngine {
     private var gyroBiasYaw = 0.0
     private var gyroBiasPitch = 0.0
     private var gyroWasActive = false
+    private var padMouseWasTouched = false
+    private var padMouseLastX = 0
+    private var padMouseLastY = 0
 
     init(profile: Profile) {
         apply(profile)
@@ -65,10 +78,19 @@ final class MappingEngine {
         padSticksEnabled = profile.padSticks?.enabled ?? true
         padDeadZone = profile.padSticks?.deadZone ?? 800
         padSensitivity = profile.padSticks?.sensitivityPercent ?? 100
+        padMouseEnabled = profile.padMouse?.enabled ?? false
+        padMouseIsRight = (profile.padMouse?.pad ?? "right") != "left"
+        padMouseDivisor = max(profile.padMouse?.sensitivityDivisor ?? 65, 1)
         gyroEnabled = profile.gyro?.enabled ?? true
+        gyroToMouse = profile.gyro?.output == "mouse"
         gyroActivationThreshold = UInt8(clamping: profile.gyro?.activationThreshold ?? 64)
         gyroDeadZone = profile.gyro?.deadZone ?? 45
         gyroSensitivity = min(max(profile.gyro?.sensitivity ?? 26, 1), 80)
+        gyroMouseSensitivity = profile.gyro?.mouseSensitivity ?? 0.018
+
+        if padMouseEnabled || (gyroEnabled && gyroToMouse) {
+            usesKeyboardMouse = true
+        }
     }
 
     func map(_ input: InputState) -> MappedOutput {
@@ -109,20 +131,42 @@ final class MappingEngine {
         var rightX = Int(input.rightStickX)
         var rightY = Int(input.rightStickY)
 
-        // Trackpads drive their stick while touched.
+        // Pad-as-mouse: laptop-trackpad-style cursor deltas from finger travel.
+        if padMouseEnabled {
+            let touched = input.buttons.contains(padMouseIsRight ? .rPadActive : .lPadActive)
+            let padX = Int(padMouseIsRight ? input.rightPadX : input.leftPadX)
+            let padY = Int(padMouseIsRight ? input.rightPadY : input.leftPadY)
+            if touched {
+                if padMouseWasTouched {
+                    output.mouseDX += Double(padX - padMouseLastX) / Double(padMouseDivisor)
+                    output.mouseDY += -Double(padY - padMouseLastY) / Double(padMouseDivisor)
+                }
+                padMouseLastX = padX
+                padMouseLastY = padY
+            }
+            padMouseWasTouched = touched
+        }
+
+        // Trackpads drive their stick while touched (unless on mouse duty).
         if padSticksEnabled {
-            if input.buttons.contains(.lPadActive) {
+            if input.buttons.contains(.lPadActive), !(padMouseEnabled && !padMouseIsRight) {
                 (leftX, leftY) = padAsStick(x: input.leftPadX, y: input.leftPadY)
             }
-            if input.buttons.contains(.rPadActive) {
+            if input.buttons.contains(.rPadActive), !(padMouseEnabled && padMouseIsRight) {
                 (rightX, rightY) = padAsStick(x: input.rightPadX, y: input.rightPadY)
             }
         }
 
-        // Gyro aiming blends into the right stick while L2 is held.
-        let (gyroX, gyroY) = gyroDelta(input)
-        rightX += gyroX
-        rightY += gyroY
+        // Gyro aiming while L2 is held: right stick blend or cursor movement.
+        if let (yaw, pitch) = gyroCorrected(input) {
+            if gyroToMouse {
+                output.mouseDX += gyroMouseDelta(-yaw)
+                output.mouseDY += gyroMouseDelta(-pitch)
+            } else {
+                rightX += gyroStickDeflection(-yaw)
+                rightY += gyroStickDeflection(-pitch)
+            }
+        }
 
         report.leftStickX = Int16(clamping: leftX)
         report.leftStickY = flipY(Int16(clamping: leftY))
@@ -141,11 +185,11 @@ final class MappingEngine {
         return (scale(x), scale(y))
     }
 
-    /// Gyro yaw/pitch → right stick deflection while the left trigger is
-    /// held. Bias learns fast at activation and drifts slowly while idle,
-    /// so resting orientation never accumulates into aim.
-    private func gyroDelta(_ input: InputState) -> (Int, Int) {
-        guard gyroEnabled else { return (0, 0) }
+    /// Bias-corrected gyro yaw/pitch while aiming is active, nil otherwise.
+    /// Bias learns fast at activation and drifts slowly while idle, so
+    /// resting orientation never accumulates into aim.
+    private func gyroCorrected(_ input: InputState) -> (yaw: Double, pitch: Double)? {
+        guard gyroEnabled else { return nil }
         let rawYaw = Double(input.gyroZ)
         let rawPitch = Double(input.gyroX)
         let active = input.leftTrigger >= gyroActivationThreshold
@@ -158,14 +202,18 @@ final class MappingEngine {
             gyroBiasPitch += (rawPitch - gyroBiasPitch) * gyroBiasFastWeight
         }
         gyroWasActive = active
-        guard active else { return (0, 0) }
+        guard active else { return nil }
+        return (rawYaw - gyroBiasYaw, rawPitch - gyroBiasPitch)
+    }
 
-        func deflection(_ value: Double) -> Int {
-            guard abs(value) >= Double(gyroDeadZone) else { return 0 }
-            return Int(value * Double(gyroSensitivity))
-        }
-        return (deflection(-(rawYaw - gyroBiasYaw)),
-                deflection(-(rawPitch - gyroBiasPitch)))
+    private func gyroStickDeflection(_ value: Double) -> Int {
+        guard abs(value) >= Double(gyroDeadZone) else { return 0 }
+        return Int(value * Double(gyroSensitivity))
+    }
+
+    private func gyroMouseDelta(_ value: Double) -> Double {
+        guard abs(value) >= Double(gyroDeadZone) else { return 0 }
+        return min(max(value * gyroMouseSensitivity, -gyroMouseClamp), gyroMouseClamp)
     }
 
     /// Hat values run 0-7 clockwise from north; nil when centered.

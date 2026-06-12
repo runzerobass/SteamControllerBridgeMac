@@ -127,12 +127,25 @@ struct Profile: Codable {
         var sensitivityPercent: Int?
     }
 
+    struct PadMouse: Codable {
+        var enabled: Bool?
+        /// Which pad drives the cursor: "left" or "right".
+        var pad: String?
+        /// Finger-travel divisor; lower = faster cursor (default 65).
+        var sensitivityDivisor: Int?
+    }
+
     struct Gyro: Codable {
         var enabled: Bool?
+        /// Where gyro aim goes: "rightStick" (default) or "mouse".
+        var output: String?
         /// Left-trigger value (0-255) that turns gyro aiming on.
         var activationThreshold: Int?
         var deadZone: Int?
+        /// Right-stick deflection multiplier (used when output is rightStick).
         var sensitivity: Int?
+        /// Pixels per raw gyro unit (used when output is mouse).
+        var mouseSensitivity: Double?
     }
 
     var name: String?
@@ -141,6 +154,7 @@ struct Profile: Codable {
     /// Keys are PhysicalInput raw values; unknown keys are ignored.
     var bindings: [String: Binding]?
     var padSticks: PadSticks?
+    var padMouse: PadMouse?
     var gyro: Gyro?
 
     /// The built-in layout: the Windows app's defaults (paddles double as
@@ -168,6 +182,8 @@ struct Profile: Codable {
             turboIntervalMs: 80,
             bindings: bindings,
             padSticks: PadSticks(enabled: true, deadZone: 800, sensitivityPercent: 100),
-            gyro: Gyro(enabled: true, activationThreshold: 64, deadZone: 45, sensitivity: 26))
+            padMouse: PadMouse(enabled: false, pad: "right", sensitivityDivisor: 65),
+            gyro: Gyro(enabled: true, output: "rightStick", activationThreshold: 64,
+                       deadZone: 45, sensitivity: 26, mouseSensitivity: 0.018))
     }
 }

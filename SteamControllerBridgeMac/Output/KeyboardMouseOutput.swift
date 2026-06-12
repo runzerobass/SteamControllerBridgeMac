@@ -26,6 +26,30 @@ final class KeyboardMouseOutput {
         apply(keys: [], mouseButtons: [])
     }
 
+    /// Moves the cursor by a relative delta. Emits drag events while a
+    /// mouse button is held so click-drag works.
+    func moveMouse(dx: Double, dy: Double) {
+        guard dx != 0 || dy != 0 else { return }
+        let source = CGEventSource(stateID: .hidSystemState)
+        let current = CGEvent(source: nil)?.location ?? .zero
+        let position = CGPoint(x: current.x + dx, y: current.y + dy)
+
+        let type: CGEventType
+        let button: CGMouseButton
+        if heldMouse.contains(.left) {
+            (type, button) = (.leftMouseDragged, .left)
+        } else if heldMouse.contains(.right) {
+            (type, button) = (.rightMouseDragged, .right)
+        } else if heldMouse.contains(.middle) {
+            (type, button) = (.otherMouseDragged, .center)
+        } else {
+            (type, button) = (.mouseMoved, .left)
+        }
+        CGEvent(mouseEventSource: source, mouseType: type,
+                mouseCursorPosition: position, mouseButton: button)?
+            .post(tap: .cghidEventTap)
+    }
+
     private func postKey(_ code: CGKeyCode, down: Bool) {
         let source = CGEventSource(stateID: .hidSystemState)
         CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down)?
