@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	The restricted entitlement needed to create the virtual gamepad.
+	This file is used ONLY by tools/build_amfi.sh for the AMFI-disabled
+	development route. Ad-hoc signing with a restricted entitlement only
+	loads when AMFI is disabled; on a normal system AMFI kills the app.
+	The clean, distributable path uses a provisioning profile that carries
+	this capability (pending Apple's VirtualHID approval).
+	-->
+	<key>com.apple.developer.hid.virtual.device</key>
+	<true/>
+</dict>
+</plist>

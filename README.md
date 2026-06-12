@@ -42,6 +42,49 @@ it — AMFI will kill the app at launch. Until the entitlement is in place the
 app builds and runs, but enabling the bridge reports that the virtual pad
 could not be created.
 
+> **Status:** the VirtualHID capability request for this app is **currently
+> under review by Apple**. Until it is granted, the standard build runs fine
+> for keyboard/mouse output, but the virtual gamepad cannot be created. The
+> AMFI route below is a stopgap for the virtual gamepad in the meantime.
+
+### 1b. AMFI route (advanced stopgap — reduces system security)
+
+> ## ⚠️ READ THIS FIRST
+>
+> This route makes the virtual gamepad work **without** Apple's entitlement by
+> **disabling AMFI (Apple Mobile File Integrity)** — the macOS subsystem that
+> verifies code signatures and entitlements. **This lowers your Mac's security
+> system-wide:** with AMFI off, the OS will load improperly-signed code from
+> *any* application, not just this one.
+>
+> - It requires booting into **Recovery** and **downgrading boot security**
+>   (Apple Silicon) to set a boot argument. The change persists across reboots
+>   until you undo it.
+> - It is **for your own machine only.** Do **not** ask anyone else to do this,
+>   and do not ship a build that depends on it as the install path.
+> - The **proper, secure path is the entitlement above**, which is in review
+>   with Apple. Prefer waiting for it if you can.
+>
+> Proceed only if you understand and accept that you are weakening your own
+> system's code-signing enforcement.
+
+If you accept the trade-off:
+
+1. Reboot into Recovery (Apple Silicon: hold the power button → Options).
+   In **Startup Security Utility**, set the system to **Reduced Security**.
+2. From a Terminal (in Recovery, or after booting back with reduced security):
+   `sudo nvram boot-args="amfi_get_out_of_my_way=1"`
+   then reboot. (SIP can stay enabled; only AMFI needs the boot-arg.)
+3. Build the entitled binary with the helper script:
+   `tools/build_amfi.sh` — it builds Release and ad-hoc-signs it with the
+   `com.apple.developer.hid.virtual.device` entitlement, printing confirmation
+   that the entitlement is embedded.
+4. Move the resulting `build/Release/SteamControllerBridgeMac.app` to
+   `/Applications` and launch it from there.
+
+**To undo:** `sudo nvram -d boot-args` (and restore Full Security in Recovery),
+then reboot. Do this once Apple grants the entitlement.
+
 ### 2. Input Monitoring permission
 
 On first launch macOS prompts for **Input Monitoring**
@@ -60,6 +103,21 @@ signing changes during development.
 
 Close Steam (or disable Steam Input for the controller) while bridging to
 avoid double input.
+
+## Cloud gaming (GeForce Now, Xbox Cloud Gaming)
+
+These services read controllers through the browser's Gamepad API or a native
+app, and the backend decides whether the virtual pad is visible:
+
+- **Chrome / Edge** read generic HID gamepads through their IOKit backend — the
+  virtual pad should appear. **Use one of these.**
+- **Safari** uses GameController.framework, which ignores virtual HID devices —
+  the pad will **not** appear there.
+- GeForce Now's **native Mac app** is untested; prefer its browser version in
+  Chrome/Edge, or fall back to a keyboard/mouse profile.
+
+If your service only works in Safari or a native app that can't see the pad,
+use a keyboard/mouse mapping profile instead (no entitlement required).
 
 ## Verifying without a game
 
