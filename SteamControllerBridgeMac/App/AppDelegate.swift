@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let controller = SteamControllerDevice()
     private let gamepad = VirtualGamepad()
     private let engine = MappingEngine(profile: ProfileStore.load())
+    private let keyboardMouse = KeyboardMouseOutput()
     private var statusItem: StatusItemController!
 
     private var bridgeEnabled = false
@@ -23,7 +24,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSWorkspace.shared.open(ProfileStore.url)
         }
         statusItem.onReloadMappings = { [weak self] in
-            self?.engine.apply(ProfileStore.load())
+            guard let self else { return }
+            keyboardMouse.releaseAll() // old bindings may hold keys
+            engine.apply(ProfileStore.load())
+            promptAccessibilityIfNeeded()
+            refreshUI()
         }
 
         wirePipeline()
@@ -36,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         if bridgeEnabled {
+            keyboardMouse.releaseAll()
             controller.stop() // restores lizard mode synchronously
             gamepad.destroy()
         }
@@ -45,12 +51,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Runs on the main thread (the controller is run-loop scheduled):
         // parse → map → forward only on change.
         var lastSent: GamepadReport?
-        controller.onInput = { [gamepad, engine] state in
-            let report = engine.map(state)
-            if report != lastSent {
-                lastSent = report
-                gamepad.send(report)
+        controller.onInput = { [gamepad, engine, keyboardMouse] state in
+            let output = engine.map(state)
+            if output.report != lastSent {
+                lastSent = output.report
+                gamepad.send(output.report)
             }
+            keyboardMouse.apply(keys: output.keys, mouseButtons: output.mouseButtons)
         }
         controller.onStateChange = { [weak self] state in
             self?.connection = state
@@ -65,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func enableBridge() {
         bridgeEnabled = true
         gamepadError = nil
+        promptAccessibilityIfNeeded()
         Task { @MainActor in
             do {
                 try await gamepad.create()
@@ -82,9 +90,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func disableBridge() {
         bridgeEnabled = false
+        keyboardMouse.releaseAll()
         controller.stop()
         gamepad.destroy()
         refreshUI()
+    }
+
+    /// Kb/m bindings need the Accessibility permission; only prompt when the
+    /// profile actually uses them.
+    private func promptAccessibilityIfNeeded() {
+        if engine.usesKeyboardMouse && !PermissionsCoordinator.accessibilityGranted {
+            PermissionsCoordinator.requestAccessibility()
+        }
     }
 
     private func toggleRawLogging() {
@@ -111,7 +128,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         if let gamepadError {
-            status += "\n⚠ \(gamepadError)"
+            status += " — ⚠ \(gamepadError)"
+        }
+        if engine.usesKeyboardMouse && !PermissionsCoordinator.accessibilityGranted {
+            status += " — ⚠ kb/m bindings need Accessibility permission"
         }
 
         let bridging = bridgeEnabled && gamepad.isActive && connection.isConnected

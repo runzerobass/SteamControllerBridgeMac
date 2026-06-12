@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 /// A mappable physical control on the Steam Controller.
 enum PhysicalInput: String, Codable, CaseIterable {
@@ -44,15 +45,71 @@ enum PhysicalInput: String, Codable, CaseIterable {
     }
 }
 
-/// What a physical input produces on the virtual pad.
-/// (Keyboard/mouse outputs arrive with the Phase 3 backend.)
-enum OutputAction: String, Codable, CaseIterable {
+enum DpadDirection: String {
+    case up, down, left, right
+}
+
+/// What a physical input produces: a virtual pad button, a dpad direction,
+/// a keyboard key, or a mouse button. Encoded in JSON as a single string:
+/// gamepad names ("a", "leftBumper", "dpadUp", …), "key:<name>" (e.g.
+/// "key:space"), or "mouse:left|right|middle".
+enum OutputAction: Codable, Equatable {
     case none
-    case a, b, x, y
-    case leftBumper, rightBumper
-    case back, start, guide
-    case leftStickClick, rightStickClick
-    case dpadUp, dpadDown, dpadLeft, dpadRight
+    case button(GamepadReport.Buttons)
+    case dpad(DpadDirection)
+    case key(CGKeyCode)
+    case mouse(MouseButton)
+
+    private static let buttonNames: [String: GamepadReport.Buttons] = [
+        "a": .a, "b": .b, "x": .x, "y": .y,
+        "leftBumper": .leftBumper, "rightBumper": .rightBumper,
+        "back": .back, "start": .start, "guide": .guide,
+        "leftStickClick": .leftThumb, "rightStickClick": .rightThumb,
+    ]
+
+    init?(string: String) {
+        if string == "none" {
+            self = .none
+        } else if let button = Self.buttonNames[string] {
+            self = .button(button)
+        } else if string.hasPrefix("dpad"),
+                  let direction = DpadDirection(rawValue: String(string.dropFirst(4)).lowercased()) {
+            self = .dpad(direction)
+        } else if string.hasPrefix("key:"),
+                  let code = KeyCodes.byName[String(string.dropFirst(4)).lowercased()] {
+            self = .key(code)
+        } else if string.hasPrefix("mouse:"),
+                  let button = MouseButton(rawValue: String(string.dropFirst(6)).lowercased()) {
+            self = .mouse(button)
+        } else {
+            return nil
+        }
+    }
+
+    var stringValue: String {
+        switch self {
+        case .none: return "none"
+        case .button(let b): return Self.buttonNames.first { $0.value == b }?.key ?? "none"
+        case .dpad(let d): return "dpad" + d.rawValue.prefix(1).uppercased() + d.rawValue.dropFirst()
+        case .key(let code): return "key:" + (KeyCodes.name(for: code) ?? "none")
+        case .mouse(let b): return "mouse:" + b.rawValue
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        guard let action = OutputAction(string: raw) else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: decoder.codingPath,
+                debugDescription: "Unknown output \"\(raw)\" — see README for valid outputs"))
+        }
+        self = action
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(stringValue)
+    }
 }
 
 /// User-editable mapping profile, stored as JSON. All fields are optional so
@@ -91,15 +148,16 @@ struct Profile: Codable {
     static var defaultProfile: Profile {
         var bindings: [String: Binding] = [:]
         let defaults: [PhysicalInput: OutputAction] = [
-            .a: .a, .b: .b, .x: .x, .y: .y,
-            .leftBumper: .leftBumper, .rightBumper: .rightBumper,
-            .view: .back, .menu: .start, .steam: .guide, .quickAccess: .none,
-            .leftStickClick: .leftStickClick, .rightStickClick: .rightStickClick,
-            .l4: .y, .l5: .x, .r4: .b, .r5: .a,
+            .a: .button(.a), .b: .button(.b), .x: .button(.x), .y: .button(.y),
+            .leftBumper: .button(.leftBumper), .rightBumper: .button(.rightBumper),
+            .view: .button(.back), .menu: .button(.start), .steam: .button(.guide),
+            .quickAccess: .none,
+            .leftStickClick: .button(.leftThumb), .rightStickClick: .button(.rightThumb),
+            .l4: .button(.y), .l5: .button(.x), .r4: .button(.b), .r5: .button(.a),
             .leftGrip: .none, .rightGrip: .none,
-            .dpadUp: .dpadUp, .dpadDown: .dpadDown,
-            .dpadLeft: .dpadLeft, .dpadRight: .dpadRight,
-            .leftPadClick: .leftStickClick, .rightPadClick: .rightStickClick,
+            .dpadUp: .dpad(.up), .dpadDown: .dpad(.down),
+            .dpadLeft: .dpad(.left), .dpadRight: .dpad(.right),
+            .leftPadClick: .button(.leftThumb), .rightPadClick: .button(.rightThumb),
             .leftTriggerFull: .none, .rightTriggerFull: .none,
         ]
         for (input, output) in defaults {

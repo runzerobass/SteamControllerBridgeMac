@@ -1,15 +1,27 @@
 import Foundation
 import QuartzCore
 
-/// Translates parsed controller state into virtual gamepad reports,
-/// driven by the user's Profile. Stateful: gyro aiming needs drift-bias
-/// tracking across reports, and turbo needs a clock.
+/// One frame of mapped output: the virtual pad report plus the keyboard
+/// keys and mouse buttons that should currently be held.
+struct MappedOutput {
+    var report = GamepadReport()
+    var keys: Set<CGKeyCode> = []
+    var mouseButtons: Set<MouseButton> = []
+}
+
+/// Translates parsed controller state into mapped output, driven by the
+/// user's Profile. Stateful: gyro aiming needs drift-bias tracking across
+/// reports, and turbo needs a clock.
 final class MappingEngine {
     private struct ResolvedBinding {
         let mask: SCButtons
         let output: OutputAction
         let turbo: Bool
     }
+
+    /// True when any binding targets the keyboard or mouse (drives the
+    /// Accessibility permission prompt).
+    private(set) var usesKeyboardMouse = false
 
     private var bindings: [ResolvedBinding] = []
     private var turboInterval = 0.08
@@ -43,6 +55,11 @@ final class MappingEngine {
                                             turbo: binding.turbo ?? false))
         }
         bindings = resolved
+        usesKeyboardMouse = resolved.contains {
+            if case .key = $0.output { return true }
+            if case .mouse = $0.output { return true }
+            return false
+        }
         turboInterval = Double(min(max(profile.turboIntervalMs ?? 80, 25), 500)) / 1000.0
 
         padSticksEnabled = profile.padSticks?.enabled ?? true
@@ -54,7 +71,8 @@ final class MappingEngine {
         gyroSensitivity = min(max(profile.gyro?.sensitivity ?? 26, 1), 80)
     }
 
-    func map(_ input: InputState) -> GamepadReport {
+    func map(_ input: InputState) -> MappedOutput {
+        var output = MappedOutput()
         var report = GamepadReport()
         var buttons: GamepadReport.Buttons = []
         var dpad = (up: false, down: false, left: false, right: false)
@@ -65,22 +83,18 @@ final class MappingEngine {
         for binding in bindings where input.buttons.contains(binding.mask) {
             if binding.turbo && !turboPhaseOn { continue }
             switch binding.output {
-            case .none: break
-            case .a: buttons.insert(.a)
-            case .b: buttons.insert(.b)
-            case .x: buttons.insert(.x)
-            case .y: buttons.insert(.y)
-            case .leftBumper: buttons.insert(.leftBumper)
-            case .rightBumper: buttons.insert(.rightBumper)
-            case .back: buttons.insert(.back)
-            case .start: buttons.insert(.start)
-            case .guide: buttons.insert(.guide)
-            case .leftStickClick: buttons.insert(.leftThumb)
-            case .rightStickClick: buttons.insert(.rightThumb)
-            case .dpadUp: dpad.up = true
-            case .dpadDown: dpad.down = true
-            case .dpadLeft: dpad.left = true
-            case .dpadRight: dpad.right = true
+            case .none:
+                break
+            case .button(let button):
+                buttons.insert(button)
+            case .dpad(.up): dpad.up = true
+            case .dpad(.down): dpad.down = true
+            case .dpad(.left): dpad.left = true
+            case .dpad(.right): dpad.right = true
+            case .key(let code):
+                output.keys.insert(code)
+            case .mouse(let button):
+                output.mouseButtons.insert(button)
             }
         }
         report.buttons = buttons
@@ -114,7 +128,8 @@ final class MappingEngine {
         report.leftStickY = flipY(Int16(clamping: leftY))
         report.rightStickX = Int16(clamping: rightX)
         report.rightStickY = flipY(Int16(clamping: rightY))
-        return report
+        output.report = report
+        return output
     }
 
     /// Treats the absolute touch position as stick deflection.

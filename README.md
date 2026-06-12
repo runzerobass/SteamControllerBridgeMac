@@ -88,10 +88,28 @@ per-button turbo:
 Physical inputs: `a b x y leftBumper rightBumper view menu steam quickAccess
 leftStickClick rightStickClick l4 l5 r4 r5 leftGrip rightGrip dpadUp dpadDown
 dpadLeft dpadRight leftPadClick rightPadClick leftTriggerFull rightTriggerFull`.
-Outputs: the same gamepad buttons plus `back start guide dpad*` and `none`.
-`turboIntervalMs` (25-500) sets the global turbo pulse rate. The `padSticks`
-and `gyro` sections tune trackpad-stick deadzone/sensitivity and gyro aiming
-(activation threshold, deadzone, sensitivity), or disable either feature.
+
+Outputs come in three flavors:
+
+- **Gamepad:** `a b x y leftBumper rightBumper back start guide
+  leftStickClick rightStickClick dpadUp dpadDown dpadLeft dpadRight`
+- **Keyboard:** `key:<name>` — letters/digits (`key:w`), plus `space return
+  tab escape shift control option command backspace delete grave minus equal
+  comma period slash semicolon quote leftbracket rightbracket backslash
+  up down left right home end pageup pagedown f1`–`f12`. Example:
+  `"r4": { "output": "key:space" }`
+- **Mouse:** `mouse:left`, `mouse:right`, `mouse:middle`
+- `none` unbinds an input.
+
+Keyboard/mouse bindings require the **Accessibility** permission (System
+Settings → Privacy & Security → Accessibility); the app prompts when a
+profile uses them. Held keys are always released on profile reload, bridge
+disable, and quit.
+
+`turboIntervalMs` (25-500) sets the global turbo pulse rate; turbo works on
+keyboard/mouse outputs too. The `padSticks` and `gyro` sections tune
+trackpad-stick deadzone/sensitivity and gyro aiming (activation threshold,
+deadzone, sensitivity), or disable either feature.
 
 ## Default layout
 

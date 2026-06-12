@@ -19,4 +19,16 @@ enum PermissionsCoordinator {
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!
         NSWorkspace.shared.open(url)
     }
+
+    // MARK: - Accessibility (required to post keyboard/mouse events)
+
+    static var accessibilityGranted: Bool {
+        AXIsProcessTrusted()
+    }
+
+    /// Triggers the system Accessibility prompt (first time only).
+    static func requestAccessibility() {
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        AXIsProcessTrustedWithOptions(options)
+    }
 }
