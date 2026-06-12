@@ -1,42 +1,90 @@
 import Foundation
+import QuartzCore
 
-/// Translates parsed controller state into virtual gamepad reports.
-///
-/// Stateful because gyro aiming needs drift-bias tracking across reports.
-/// Layout: the Windows app's defaults, plus trackpads-as-sticks and
-/// gyro-to-right-stick while the left trigger is held. Tuning values are
-/// ports of the Windows app's battle-tested constants
-/// (XboxVirtualController.cs / GyroMouseEmulator.cs).
+/// Translates parsed controller state into virtual gamepad reports,
+/// driven by the user's Profile. Stateful: gyro aiming needs drift-bias
+/// tracking across reports, and turbo needs a clock.
 final class MappingEngine {
-    struct Tuning {
-        /// Trackpad deflection below this is ignored (raw units, 0-8000).
-        var padStickDeadZone: Int = 800
-        /// Trackpad-to-stick scaling percent.
-        var padStickSensitivity: Int = 100
-        /// Left-trigger value (0-255) that turns gyro aiming on.
-        var gyroActivationThreshold: UInt8 = 64
-        /// Raw gyro rotation below this is ignored (drift floor).
-        var gyroDeadZone: Int = 45
-        /// Raw gyro units → stick deflection multiplier (1-80).
-        var gyroSensitivity: Int = 26
-        /// Bias learning weights: fast on activation, slow while inactive.
-        var gyroBiasFastWeight: Double = 0.65
-        var gyroBiasSlowWeight: Double = 0.04
+    private struct ResolvedBinding {
+        let mask: SCButtons
+        let output: OutputAction
+        let turbo: Bool
     }
 
-    var tuning = Tuning()
+    private var bindings: [ResolvedBinding] = []
+    private var turboInterval = 0.08
+    private var padSticksEnabled = true
+    private var padDeadZone = 800
+    private var padSensitivity = 100
+    private var gyroEnabled = true
+    private var gyroActivationThreshold: UInt8 = 64
+    private var gyroDeadZone = 45
+    private var gyroSensitivity = 26
+    /// Bias learning weights from the Windows app: fast on activation,
+    /// slow drift-tracking while inactive.
+    private let gyroBiasFastWeight = 0.65
+    private let gyroBiasSlowWeight = 0.04
 
     private var gyroBiasYaw = 0.0
     private var gyroBiasPitch = 0.0
     private var gyroWasActive = false
 
+    init(profile: Profile) {
+        apply(profile)
+    }
+
+    func apply(_ profile: Profile) {
+        var resolved: [ResolvedBinding] = []
+        let map = profile.bindings ?? Profile.defaultProfile.bindings!
+        for (key, binding) in map {
+            guard let input = PhysicalInput(rawValue: key), binding.output != .none else { continue }
+            resolved.append(ResolvedBinding(mask: input.buttonMask,
+                                            output: binding.output,
+                                            turbo: binding.turbo ?? false))
+        }
+        bindings = resolved
+        turboInterval = Double(min(max(profile.turboIntervalMs ?? 80, 25), 500)) / 1000.0
+
+        padSticksEnabled = profile.padSticks?.enabled ?? true
+        padDeadZone = profile.padSticks?.deadZone ?? 800
+        padSensitivity = profile.padSticks?.sensitivityPercent ?? 100
+        gyroEnabled = profile.gyro?.enabled ?? true
+        gyroActivationThreshold = UInt8(clamping: profile.gyro?.activationThreshold ?? 64)
+        gyroDeadZone = profile.gyro?.deadZone ?? 45
+        gyroSensitivity = min(max(profile.gyro?.sensitivity ?? 26, 1), 80)
+    }
+
     func map(_ input: InputState) -> GamepadReport {
         var report = GamepadReport()
-        report.buttons = mapButtons(input.buttons)
-        report.hat = hatValue(up: input.buttons.contains(.dpadUp),
-                              down: input.buttons.contains(.dpadDown),
-                              left: input.buttons.contains(.dpadLeft),
-                              right: input.buttons.contains(.dpadRight))
+        var buttons: GamepadReport.Buttons = []
+        var dpad = (up: false, down: false, left: false, right: false)
+
+        // Turbo pulses on a shared phase so multiple turbo buttons stay in sync.
+        let turboPhaseOn = Int(CACurrentMediaTime() / turboInterval) % 2 == 0
+
+        for binding in bindings where input.buttons.contains(binding.mask) {
+            if binding.turbo && !turboPhaseOn { continue }
+            switch binding.output {
+            case .none: break
+            case .a: buttons.insert(.a)
+            case .b: buttons.insert(.b)
+            case .x: buttons.insert(.x)
+            case .y: buttons.insert(.y)
+            case .leftBumper: buttons.insert(.leftBumper)
+            case .rightBumper: buttons.insert(.rightBumper)
+            case .back: buttons.insert(.back)
+            case .start: buttons.insert(.start)
+            case .guide: buttons.insert(.guide)
+            case .leftStickClick: buttons.insert(.leftThumb)
+            case .rightStickClick: buttons.insert(.rightThumb)
+            case .dpadUp: dpad.up = true
+            case .dpadDown: dpad.down = true
+            case .dpadLeft: dpad.left = true
+            case .dpadRight: dpad.right = true
+            }
+        }
+        report.buttons = buttons
+        report.hat = hatValue(up: dpad.up, down: dpad.down, left: dpad.left, right: dpad.right)
         report.leftTrigger = input.leftTrigger
         report.rightTrigger = input.rightTrigger
 
@@ -48,11 +96,13 @@ final class MappingEngine {
         var rightY = Int(input.rightStickY)
 
         // Trackpads drive their stick while touched.
-        if input.buttons.contains(.lPadActive) {
-            (leftX, leftY) = padAsStick(x: input.leftPadX, y: input.leftPadY)
-        }
-        if input.buttons.contains(.rPadActive) {
-            (rightX, rightY) = padAsStick(x: input.rightPadX, y: input.rightPadY)
+        if padSticksEnabled {
+            if input.buttons.contains(.lPadActive) {
+                (leftX, leftY) = padAsStick(x: input.leftPadX, y: input.leftPadY)
+            }
+            if input.buttons.contains(.rPadActive) {
+                (rightX, rightY) = padAsStick(x: input.rightPadX, y: input.rightPadY)
+            }
         }
 
         // Gyro aiming blends into the right stick while L2 is held.
@@ -60,36 +110,18 @@ final class MappingEngine {
         rightX += gyroX
         rightY += gyroY
 
-        report.leftStickX = clampAxis(leftX)
-        report.leftStickY = flipY(clampAxis(leftY))
-        report.rightStickX = clampAxis(rightX)
-        report.rightStickY = flipY(clampAxis(rightY))
+        report.leftStickX = Int16(clamping: leftX)
+        report.leftStickY = flipY(Int16(clamping: leftY))
+        report.rightStickX = Int16(clamping: rightX)
+        report.rightStickY = flipY(Int16(clamping: rightY))
         return report
-    }
-
-    private func mapButtons(_ pressed: SCButtons) -> GamepadReport.Buttons {
-        var buttons: GamepadReport.Buttons = []
-        // Rear paddles double as face buttons by default (L4→Y, L5→X,
-        // R4→B, R5→A), matching the Windows app.
-        if pressed.contains(.btnA) || pressed.contains(.btnR5) { buttons.insert(.a) }
-        if pressed.contains(.btnB) || pressed.contains(.btnR4) { buttons.insert(.b) }
-        if pressed.contains(.btnX) || pressed.contains(.btnL5) { buttons.insert(.x) }
-        if pressed.contains(.btnY) || pressed.contains(.btnL4) { buttons.insert(.y) }
-        if pressed.contains(.btnLB) { buttons.insert(.leftBumper) }
-        if pressed.contains(.btnRB) { buttons.insert(.rightBumper) }
-        if pressed.contains(.btnSelect) { buttons.insert(.back) }
-        if pressed.contains(.btnStart) { buttons.insert(.start) }
-        if pressed.contains(.btnSteam) { buttons.insert(.guide) }
-        if pressed.contains(.lStickClick) { buttons.insert(.leftThumb) }
-        if pressed.contains(.rStickClick) { buttons.insert(.rightThumb) }
-        return buttons
     }
 
     /// Treats the absolute touch position as stick deflection.
     private func padAsStick(x: Int16, y: Int16) -> (Int, Int) {
         func scale(_ value: Int16) -> Int {
-            guard abs(Int(value)) >= tuning.padStickDeadZone else { return 0 }
-            return Int(value) * tuning.padStickSensitivity / 100
+            guard abs(Int(value)) >= padDeadZone else { return 0 }
+            return Int(value) * padSensitivity / 100
         }
         return (scale(x), scale(y))
     }
@@ -98,23 +130,24 @@ final class MappingEngine {
     /// held. Bias learns fast at activation and drifts slowly while idle,
     /// so resting orientation never accumulates into aim.
     private func gyroDelta(_ input: InputState) -> (Int, Int) {
+        guard gyroEnabled else { return (0, 0) }
         let rawYaw = Double(input.gyroZ)
         let rawPitch = Double(input.gyroX)
-        let active = input.leftTrigger >= tuning.gyroActivationThreshold
+        let active = input.leftTrigger >= gyroActivationThreshold
 
         if !active {
-            gyroBiasYaw += (rawYaw - gyroBiasYaw) * tuning.gyroBiasSlowWeight
-            gyroBiasPitch += (rawPitch - gyroBiasPitch) * tuning.gyroBiasSlowWeight
+            gyroBiasYaw += (rawYaw - gyroBiasYaw) * gyroBiasSlowWeight
+            gyroBiasPitch += (rawPitch - gyroBiasPitch) * gyroBiasSlowWeight
         } else if !gyroWasActive {
-            gyroBiasYaw += (rawYaw - gyroBiasYaw) * tuning.gyroBiasFastWeight
-            gyroBiasPitch += (rawPitch - gyroBiasPitch) * tuning.gyroBiasFastWeight
+            gyroBiasYaw += (rawYaw - gyroBiasYaw) * gyroBiasFastWeight
+            gyroBiasPitch += (rawPitch - gyroBiasPitch) * gyroBiasFastWeight
         }
         gyroWasActive = active
         guard active else { return (0, 0) }
 
         func deflection(_ value: Double) -> Int {
-            guard abs(value) >= Double(tuning.gyroDeadZone) else { return 0 }
-            return Int(value * Double(tuning.gyroSensitivity))
+            guard abs(value) >= Double(gyroDeadZone) else { return 0 }
+            return Int(value * Double(gyroSensitivity))
         }
         return (deflection(-(rawYaw - gyroBiasYaw)),
                 deflection(-(rawPitch - gyroBiasPitch)))
@@ -133,10 +166,6 @@ final class MappingEngine {
         case (true, false, true, false):  return 7
         default: return nil
         }
-    }
-
-    private func clampAxis(_ value: Int) -> Int16 {
-        Int16(clamping: value)
     }
 
     /// Controller axes are up-positive; HID Y axes are down-positive.

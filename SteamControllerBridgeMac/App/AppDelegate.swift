@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let log = Logger(subsystem: "com.arvindrao.SteamControllerBridgeMac", category: "app")
     private let controller = SteamControllerDevice()
     private let gamepad = VirtualGamepad()
+    private let engine = MappingEngine(profile: ProfileStore.load())
     private var statusItem: StatusItemController!
 
     private var bridgeEnabled = false
@@ -17,6 +18,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = StatusItemController()
         statusItem.onToggleBridge = { [weak self] in self?.toggleBridge() }
         statusItem.onToggleRawLogging = { [weak self] in self?.toggleRawLogging() }
+        statusItem.onEditMappings = {
+            ProfileStore.writeDefaultIfMissing()
+            NSWorkspace.shared.open(ProfileStore.url)
+        }
+        statusItem.onReloadMappings = { [weak self] in
+            self?.engine.apply(ProfileStore.load())
+        }
 
         wirePipeline()
 
@@ -36,9 +44,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func wirePipeline() {
         // Runs on the main thread (the controller is run-loop scheduled):
         // parse → map → forward only on change.
-        let engine = MappingEngine()
         var lastSent: GamepadReport?
-        controller.onInput = { [gamepad] state in
+        controller.onInput = { [gamepad, engine] state in
             let report = engine.map(state)
             if report != lastSent {
                 lastSent = report

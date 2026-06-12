@@ -6,6 +6,8 @@ import AppKit
 final class StatusItemController: NSObject, NSMenuDelegate {
     var onToggleBridge: (() -> Void)?
     var onToggleRawLogging: (() -> Void)?
+    var onEditMappings: (() -> Void)?
+    var onReloadMappings: (() -> Void)?
 
     private let statusItem: NSStatusItem
     private let statusLine = NSMenuItem(title: "Starting…", action: nil, keyEquivalent: "")
@@ -27,6 +29,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         toggleItem.target = self
         menu.addItem(toggleItem)
+        menu.addItem(.separator())
+        let editItem = NSMenuItem(title: "Edit Mappings…", action: #selector(editMappings), keyEquivalent: "")
+        editItem.target = self
+        menu.addItem(editItem)
+        let reloadItem = NSMenuItem(title: "Reload Mappings", action: #selector(reloadMappings), keyEquivalent: "r")
+        reloadItem.target = self
+        menu.addItem(reloadItem)
         menu.addItem(.separator())
         rawLogItem.target = self
         menu.addItem(rawLogItem)
@@ -56,6 +65,14 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func toggleRawLogging() {
         onToggleRawLogging?()
+    }
+
+    @objc private func editMappings() {
+        onEditMappings?()
+    }
+
+    @objc private func reloadMappings() {
+        onReloadMappings?()
     }
 
     @objc private func openPermissionSettings() {

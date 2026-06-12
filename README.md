@@ -70,6 +70,29 @@ avoid double input.
 - Raw controller reports: menu → **Log Raw Reports**, watch in Console.app
   (subsystem `com.arvindrao.SteamControllerBridgeMac`).
 
+## Remapping
+
+Mappings live in
+`~/Library/Application Support/SteamControllerBridgeMac/profile.json`
+(created with the default layout on first launch). Use the menu's
+**Edit Mappings…** to open it and **Reload Mappings** (⌘R in the menu) to
+apply changes — no restart needed.
+
+Each entry binds a physical input to a virtual pad output, with optional
+per-button turbo:
+
+```json
+"r4": { "output": "b", "turbo": true }
+```
+
+Physical inputs: `a b x y leftBumper rightBumper view menu steam quickAccess
+leftStickClick rightStickClick l4 l5 r4 r5 leftGrip rightGrip dpadUp dpadDown
+dpadLeft dpadRight leftPadClick rightPadClick leftTriggerFull rightTriggerFull`.
+Outputs: the same gamepad buttons plus `back start guide dpad*` and `none`.
+`turboIntervalMs` (25-500) sets the global turbo pulse rate. The `padSticks`
+and `gyro` sections tune trackpad-stick deadzone/sensitivity and gyro aiming
+(activation threshold, deadzone, sensitivity), or disable either feature.
+
 ## Default layout
 
 ABXY, bumpers, stick clicks, and d-pad map 1:1. View→Back, Menu→Start,
