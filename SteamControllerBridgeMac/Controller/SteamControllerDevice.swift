@@ -43,6 +43,10 @@ final class SteamControllerDevice {
     private var heartbeat: DispatchSourceTimer?
     private var rawLogCounter = 0
     private var dumpFile: FileHandle?
+    /// Monotonic time of the last input report; the controller streams
+    /// continuously while we hold it, so a gap means we lost our grip.
+    private var lastInputTime = 0.0
+    private let inputStaleThreshold = 0.75
 
     static let dumpFileURL = FileManager.default
         .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -93,11 +97,12 @@ final class SteamControllerDevice {
     func stop() {
         heartbeat?.cancel()
         heartbeat = nil
-        if device != nil {
+        if let device {
             write(SteamControllerProtocol.restoreDefaultMappings,
                   type: kIOHIDReportTypeFeature,
                   reportID: SteamControllerProtocol.featureReportID)
-            device = nil
+            IOHIDDeviceClose(device, IOOptionBits(kIOHIDOptionsTypeSeizeDevice))
+            self.device = nil
         }
         if let manager {
             IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeSeizeDevice))
@@ -138,6 +143,19 @@ final class SteamControllerDevice {
             ?? "Steam Controller"
         log.notice("Controller matched: \(name, privacy: .public)")
 
+        // Device-level seize: a stronger exclusive claim than the manager's,
+        // so other apps' gamepad/WebHID layers (e.g. a browser launching a
+        // cloud-gaming session) can't grab the controller out from under us.
+        IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeSeizeDevice))
+        registerInputCallback(device)
+
+        lastInputTime = ProcessInfo.processInfo.systemUptime
+        sendInitSequence()
+        startHeartbeat()
+        onStateChange?(.connected(name: name))
+    }
+
+    private func registerInputCallback(_ device: IOHIDDevice) {
         let context = Unmanaged.passUnretained(self).toOpaque()
         IOHIDDeviceRegisterInputReportCallback(
             device, reportBuffer, 256,
@@ -148,10 +166,6 @@ final class SteamControllerDevice {
                     me.handleReport(reportID: reportID, bytes: report, length: reportLength)
                 }
             }, context)
-
-        sendInitSequence()
-        startHeartbeat()
-        onStateChange?(.connected(name: name))
     }
 
     private func deviceRemoved(_ device: IOHIDDevice) {
@@ -173,6 +187,7 @@ final class SteamControllerDevice {
                 dumpFile.write(Data(line.utf8))
             }
         }
+        lastInputTime = ProcessInfo.processInfo.systemUptime
         guard let state = InputState.parse(reportID: reportID, bytes: bytes, length: length) else { return }
         onInput?(state)
     }
@@ -210,12 +225,30 @@ final class SteamControllerDevice {
                        repeating: SteamControllerProtocol.heartbeatInterval)
         timer.setEventHandler { [weak self] in
             guard let self else { return }
-            self.write(SteamControllerProtocol.clearDigitalMappings,
-                       type: kIOHIDReportTypeFeature,
-                       reportID: SteamControllerProtocol.featureReportID)
+            let now = ProcessInfo.processInfo.systemUptime
+            if now - self.lastInputTime > self.inputStaleThreshold {
+                // Input stream stopped: another app grabbed the controller.
+                // Forcibly reclaim it and re-disable lizard mode.
+                self.reclaimDevice()
+            } else {
+                self.write(SteamControllerProtocol.clearDigitalMappings,
+                           type: kIOHIDReportTypeFeature,
+                           reportID: SteamControllerProtocol.featureReportID)
+            }
         }
         timer.resume()
         heartbeat = timer
+    }
+
+    /// Re-asserts exclusive control after another process stole the device.
+    private func reclaimDevice() {
+        guard let device else { return }
+        IOHIDDeviceClose(device, IOOptionBits(kIOHIDOptionsTypeSeizeDevice))
+        let result = IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeSeizeDevice))
+        registerInputCallback(device)
+        sendInitSequence()
+        lastInputTime = ProcessInfo.processInfo.systemUptime
+        log.notice("Reclaimed controller after lost grip: 0x\(String(result, radix: 16), privacy: .public)")
     }
 
     /// Writes a report with crosspuck's retry strategy: BLE writes in
