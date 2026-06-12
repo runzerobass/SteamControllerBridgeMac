@@ -160,6 +160,10 @@ triggers pass through.
   blends into the right stick, with automatic drift-bias compensation.
   Tuning constants live in `MappingEngine.Tuning`.
 
+## Credits
+
+Menu bar icon: [Steam Controller](https://icons8.com/icons/set/steam-controller) by [Icons8](https://icons8.com).
+
 ## Roadmap
 
 - Phase 2: remappable profiles (JSON), turbo, profile picker.
