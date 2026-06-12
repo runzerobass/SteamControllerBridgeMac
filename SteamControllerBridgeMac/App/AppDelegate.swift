@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import os.log
 
 @MainActor
@@ -9,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let engine = MappingEngine(profile: ProfileStore.load())
     private let keyboardMouse = KeyboardMouseOutput()
     private var statusItem: StatusItemController!
+    private var settingsWindow: NSWindow?
 
     private var bridgeEnabled = false
     private var rawLogging = false
@@ -19,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = StatusItemController()
         statusItem.onToggleBridge = { [weak self] in self?.toggleBridge() }
         statusItem.onToggleRawLogging = { [weak self] in self?.toggleRawLogging() }
+        statusItem.onOpenSettings = { [weak self] in self?.openSettings() }
         statusItem.onEditMappings = {
             ProfileStore.writeDefaultIfMissing()
             NSWorkspace.shared.open(ProfileStore.url)
@@ -94,6 +97,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyboardMouse.releaseAll()
         controller.stop()
         gamepad.destroy()
+        refreshUI()
+    }
+
+    private func openSettings() {
+        // Rebuild each open so the editor always reflects the saved file.
+        let view = SettingsView(profile: ProfileStore.load()) { [weak self] profile in
+            self?.saveProfile(profile)
+        }
+        let window = settingsWindow ?? {
+            let window = NSWindow(contentRect: .zero,
+                                  styleMask: [.titled, .closable, .miniaturizable],
+                                  backing: .buffered, defer: false)
+            window.title = "Steam Controller Bridge Settings"
+            window.isReleasedWhenClosed = false
+            settingsWindow = window
+            return window
+        }()
+        window.contentViewController = NSHostingController(rootView: view)
+        NSApp.activate(ignoringOtherApps: true)
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    private func saveProfile(_ profile: Profile) {
+        do {
+            try ProfileStore.save(profile)
+        } catch {
+            log.error("Saving profile failed: \(error.localizedDescription, privacy: .public)")
+        }
+        keyboardMouse.releaseAll() // old bindings may hold keys
+        engine.apply(profile)
+        promptAccessibilityIfNeeded()
         refreshUI()
     }
 

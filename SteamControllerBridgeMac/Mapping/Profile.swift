@@ -216,3 +216,77 @@ struct Profile: Codable {
                        deadZone: 45, sensitivity: 26, mouseSensitivity: 0.018))
     }
 }
+
+// MARK: - Presets
+
+extension Profile {
+    static let presets: [(name: String, profile: Profile)] = [
+        ("Default", .defaultProfile),
+        ("Nintendo Swap", .nintendoSwap),
+        ("Desktop Mouse", .desktopMouse),
+        ("FPS Keyboard & Mouse", .fpsKeyboardMouse),
+    ]
+
+    /// Physical A/B and X/Y swapped for Nintendo-style layouts.
+    static var nintendoSwap: Profile {
+        var preset = defaultProfile
+        preset.name = "Nintendo Swap"
+        preset.bindings?[PhysicalInput.a.rawValue] = Binding(output: .button(.b), turbo: false)
+        preset.bindings?[PhysicalInput.b.rawValue] = Binding(output: .button(.a), turbo: false)
+        preset.bindings?[PhysicalInput.x.rawValue] = Binding(output: .button(.y), turbo: false)
+        preset.bindings?[PhysicalInput.y.rawValue] = Binding(output: .button(.x), turbo: false)
+        preset.bindings?[PhysicalInput.r5.rawValue] = Binding(output: .button(.b), turbo: false)
+        preset.bindings?[PhysicalInput.r4.rawValue] = Binding(output: .button(.a), turbo: false)
+        preset.bindings?[PhysicalInput.l5.rawValue] = Binding(output: .button(.y), turbo: false)
+        preset.bindings?[PhysicalInput.l4.rawValue] = Binding(output: .button(.x), turbo: false)
+        return preset
+    }
+
+    /// Drive macOS: pads/sticks move the cursor, triggers click, dpad arrows.
+    static var desktopMouse: Profile {
+        var preset = defaultProfile
+        preset.name = "Desktop Mouse"
+        preset.padMouse = PadMouse(enabled: true, pad: "right", sensitivityDivisor: 65)
+        preset.stickMouse = StickMouse(enabled: true, stick: "right", deadZone: 1500, maxSpeed: 1200)
+        preset.gyro?.enabled = false
+        var b = preset.bindings ?? [:]
+        b[PhysicalInput.a.rawValue] = Binding(output: .mouse(.left), turbo: false)
+        b[PhysicalInput.b.rawValue] = Binding(output: .mouse(.right), turbo: false)
+        b[PhysicalInput.rightPadClick.rawValue] = Binding(output: .mouse(.left), turbo: false)
+        b[PhysicalInput.rightTriggerFull.rawValue] = Binding(output: .mouse(.left), turbo: false)
+        b[PhysicalInput.leftTriggerFull.rawValue] = Binding(output: .mouse(.right), turbo: false)
+        b[PhysicalInput.dpadUp.rawValue] = Binding(output: .key(KeyCodes.byName["up"]!), turbo: false)
+        b[PhysicalInput.dpadDown.rawValue] = Binding(output: .key(KeyCodes.byName["down"]!), turbo: false)
+        b[PhysicalInput.dpadLeft.rawValue] = Binding(output: .key(KeyCodes.byName["left"]!), turbo: false)
+        b[PhysicalInput.dpadRight.rawValue] = Binding(output: .key(KeyCodes.byName["right"]!), turbo: false)
+        b[PhysicalInput.menu.rawValue] = Binding(output: .key(KeyCodes.byName["return"]!), turbo: false)
+        b[PhysicalInput.view.rawValue] = Binding(output: .key(KeyCodes.byName["escape"]!), turbo: false)
+        preset.bindings = b
+        return preset
+    }
+
+    /// Keyboard/mouse FPS controls: WASD, pad+gyro aim, trigger clicks.
+    static var fpsKeyboardMouse: Profile {
+        var preset = defaultProfile
+        preset.name = "FPS Keyboard & Mouse"
+        preset.stickKeys = StickKeys(enabled: true, stick: "left", deadZone: 1500,
+                                     up: .key(KeyCodes.byName["w"]!), down: .key(KeyCodes.byName["s"]!),
+                                     left: .key(KeyCodes.byName["a"]!), right: .key(KeyCodes.byName["d"]!))
+        preset.padMouse = PadMouse(enabled: true, pad: "right", sensitivityDivisor: 65)
+        preset.gyro = Gyro(enabled: true, output: "mouse", activationThreshold: 64,
+                           deadZone: 45, sensitivity: 26, mouseSensitivity: 0.018)
+        var b = preset.bindings ?? [:]
+        b[PhysicalInput.a.rawValue] = Binding(output: .key(KeyCodes.byName["space"]!), turbo: false)
+        b[PhysicalInput.b.rawValue] = Binding(output: .key(KeyCodes.byName["control"]!), turbo: false)
+        b[PhysicalInput.x.rawValue] = Binding(output: .key(KeyCodes.byName["r"]!), turbo: false)
+        b[PhysicalInput.y.rawValue] = Binding(output: .key(KeyCodes.byName["f"]!), turbo: false)
+        b[PhysicalInput.leftBumper.rawValue] = Binding(output: .key(KeyCodes.byName["q"]!), turbo: false)
+        b[PhysicalInput.rightBumper.rawValue] = Binding(output: .key(KeyCodes.byName["e"]!), turbo: false)
+        b[PhysicalInput.leftStickClick.rawValue] = Binding(output: .key(KeyCodes.byName["shift"]!), turbo: false)
+        b[PhysicalInput.rightTriggerFull.rawValue] = Binding(output: .mouse(.left), turbo: false)
+        b[PhysicalInput.leftTriggerFull.rawValue] = Binding(output: .mouse(.right), turbo: false)
+        b[PhysicalInput.menu.rawValue] = Binding(output: .key(KeyCodes.byName["escape"]!), turbo: false)
+        preset.bindings = b
+        return preset
+    }
+}

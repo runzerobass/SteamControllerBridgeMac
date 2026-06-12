@@ -24,6 +24,14 @@ enum ProfileStore {
         }
     }
 
+    static func save(_ profile: Profile) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(profile).write(to: url, options: .atomic)
+    }
+
     static func writeDefaultIfMissing() {
         guard !FileManager.default.fileExists(atPath: url.path) else { return }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),

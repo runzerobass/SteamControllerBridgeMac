@@ -72,7 +72,13 @@ avoid double input.
 
 ## Remapping
 
-Mappings live in
+The easiest way: menu → **Settings…** (⌘,) opens a window with one-click
+presets (Default, Nintendo Swap, Desktop Mouse, FPS Keyboard & Mouse), a
+dropdown per physical input with optional per-button turbo, and sliders
+for all trackpad/stick/gyro tuning. **Save & Apply** takes effect
+immediately.
+
+For hand editing and sharing, the same mappings live in
 `~/Library/Application Support/SteamControllerBridgeMac/profile.json`
 (created with the default layout on first launch). Use the menu's
 **Edit Mappings…** to open it and **Reload Mappings** (⌘R in the menu) to

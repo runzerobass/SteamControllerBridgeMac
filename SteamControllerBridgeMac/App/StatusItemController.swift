@@ -6,6 +6,7 @@ import AppKit
 final class StatusItemController: NSObject, NSMenuDelegate {
     var onToggleBridge: (() -> Void)?
     var onToggleRawLogging: (() -> Void)?
+    var onOpenSettings: (() -> Void)?
     var onEditMappings: (() -> Void)?
     var onReloadMappings: (() -> Void)?
 
@@ -30,7 +31,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         toggleItem.target = self
         menu.addItem(toggleItem)
         menu.addItem(.separator())
-        let editItem = NSMenuItem(title: "Edit Mappings…", action: #selector(editMappings), keyEquivalent: "")
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
+        let editItem = NSMenuItem(title: "Edit Mappings File…", action: #selector(editMappings), keyEquivalent: "")
         editItem.target = self
         menu.addItem(editItem)
         let reloadItem = NSMenuItem(title: "Reload Mappings", action: #selector(reloadMappings), keyEquivalent: "r")
@@ -65,6 +69,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func toggleRawLogging() {
         onToggleRawLogging?()
+    }
+
+    @objc private func openSettings() {
+        onOpenSettings?()
     }
 
     @objc private func editMappings() {

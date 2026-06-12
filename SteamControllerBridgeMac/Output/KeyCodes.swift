@@ -25,8 +25,26 @@ enum KeyCodes {
         "left": 0x7B, "right": 0x7C, "down": 0x7D, "up": 0x7E,
     ]
 
+    /// Display/encode order; excludes aliases (enter, delete, ctrl, alt) so
+    /// round-tripping a code back to a name is deterministic.
+    static let canonicalNames: [String] = [
+        "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
+        "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
+        "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+        "space", "return", "tab", "escape",
+        "shift", "control", "option", "command",
+        "rightshift", "rightcontrol", "rightoption", "capslock",
+        "backspace", "forwarddelete",
+        "up", "down", "left", "right",
+        "home", "end", "pageup", "pagedown",
+        "grave", "minus", "equal", "leftbracket", "rightbracket",
+        "backslash", "semicolon", "quote", "comma", "period", "slash",
+        "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12",
+    ]
+
     static func name(for code: CGKeyCode) -> String? {
-        byName.first { $0.value == code }?.key
+        canonicalNames.first { byName[$0] == code }
+            ?? byName.first { $0.value == code }?.key
     }
 }
 
