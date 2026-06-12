@@ -19,13 +19,18 @@ Readable from any browser (you'll lose access to the Mac during Recovery).
 
 ## 2. Set the AMFI boot argument
 
-Still in Recovery: menu bar → **Utilities → Terminal**, then run:
+Still in Recovery: menu bar → **Utilities → Terminal**.
+
+On macOS 27, `nvram` refuses to set `boot-args` while SIP is fully enabled, so
+disable SIP first (it gates the same protected NVRAM):
 
 ```
+csrutil disable
 nvram boot-args="amfi_get_out_of_my_way=1"
 ```
 
-(SIP can stay on; only AMFI needs this.) Then: Apple menu → **Restart**.
+Then: Apple menu → **Restart**. (To re-enable SIP later, `csrutil enable` from
+Recovery.)
 
 ## 3. Build the entitled app (back in macOS)
 
@@ -64,4 +69,5 @@ that service to a keyboard/mouse profile instead (no AMFI needed).
 ## Undo (once Apple grants the entitlement)
 
 1. Normal Terminal: `sudo nvram -d boot-args` then restart.
-2. Optional: back into Recovery → Startup Security Utility → **Full Security**.
+2. Back into Recovery → `csrutil enable` (re-enable SIP) → Startup Security
+   Utility → **Full Security**.
