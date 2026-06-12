@@ -85,6 +85,11 @@ final class MappingEngine {
     /// slow drift-tracking while inactive.
     private let gyroBiasFastWeight = 0.65
     private let gyroBiasSlowWeight = 0.04
+    /// Continuous drift absorption while ACTIVE: very slow, and gated to
+    /// small deltas so deliberate aiming is never eaten. Without this, the
+    /// bias freezes during long activations (e.g. touch activators) and
+    /// thermal drift becomes visible self-movement.
+    private let gyroBiasActiveWeight = 0.003
 
     private var gyroBiasYaw = 0.0
     private var gyroBiasPitch = 0.0
@@ -413,6 +418,13 @@ final class MappingEngine {
         } else if !gyroWasActive {
             gyroBiasYaw += (rawYaw - gyroBiasYaw) * gyroBiasFastWeight
             gyroBiasPitch += (rawPitch - gyroBiasPitch) * gyroBiasFastWeight
+        } else {
+            // Gated drift tracker: only absorb what looks like drift.
+            let gate = Double(gyroDeadZone) * 2
+            let deltaYaw = rawYaw - gyroBiasYaw
+            let deltaPitch = rawPitch - gyroBiasPitch
+            if abs(deltaYaw) < gate { gyroBiasYaw += deltaYaw * gyroBiasActiveWeight }
+            if abs(deltaPitch) < gate { gyroBiasPitch += deltaPitch * gyroBiasActiveWeight }
         }
         gyroWasActive = active
         guard active else { return nil }
