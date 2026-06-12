@@ -31,6 +31,7 @@ final class MappingEngine {
 
     private var bindings: [ResolvedBinding] = []
     private var turboInterval = 0.08
+    private var stickDeadZone = 2500
     private var padSticksEnabled = true
     private var padDeadZone = 800
     private var padSensitivity = 100
@@ -156,6 +157,7 @@ final class MappingEngine {
         }
         turboInterval = Double(min(max(profile.turboIntervalMs ?? 80, 25), 500)) / 1000.0
 
+        stickDeadZone = min(max(profile.sticks?.deadZone ?? 2500, 0), 16000)
         padSticksEnabled = profile.padSticks?.enabled ?? true
         padDeadZone = profile.padSticks?.deadZone ?? 800
         padSensitivity = profile.padSticks?.sensitivityPercent ?? 100
@@ -216,11 +218,10 @@ final class MappingEngine {
         report.rightTrigger = input.rightTrigger
 
         // Axes are computed in controller space (Y up-positive) and flipped
-        // to the HID convention (Y down-positive) at the end.
-        var leftX = Int(input.leftStickX)
-        var leftY = Int(input.leftStickY)
-        var rightX = Int(input.rightStickX)
-        var rightY = Int(input.rightStickY)
+        // to the HID convention (Y down-positive) at the end. The physical
+        // sticks get a radial deadzone with rescaling.
+        var (leftX, leftY) = radialDeadZone(x: Int(input.leftStickX), y: Int(input.leftStickY))
+        var (rightX, rightY) = radialDeadZone(x: Int(input.rightStickX), y: Int(input.rightStickY))
 
         // Trackpad tick haptics: a quiet click on touch-down and per unit of
         // finger travel, recreating the lizard-mode feel.
@@ -367,6 +368,18 @@ final class MappingEngine {
               now - state.lastTickTime >= padTickMinInterval else { return false }
         (state.lastX, state.lastY, state.lastTickTime) = (x, y, now)
         return true
+    }
+
+    /// Radial deadzone with rescaling: inside the zone is zero, and
+    /// deflection ramps smoothly from the zone's edge to full, so there is
+    /// no jump and diagonals feel identical to cardinals.
+    private func radialDeadZone(x: Int, y: Int) -> (Int, Int) {
+        guard stickDeadZone > 0 else { return (x, y) }
+        let magnitude = (Double(x) * Double(x) + Double(y) * Double(y)).squareRoot()
+        guard magnitude >= Double(stickDeadZone) else { return (0, 0) }
+        let scale = min((magnitude - Double(stickDeadZone)) / (32767.0 - Double(stickDeadZone)), 1.0)
+            * 32767.0 / magnitude
+        return (Int(Double(x) * scale), Int(Double(y) * scale))
     }
 
     /// Treats the absolute touch position as stick deflection.

@@ -9,6 +9,7 @@ struct EditableProfile {
 
     var bindings: [PhysicalInput: Row] = [:]
     var turboIntervalMs = 80.0
+    var stickDeadZone = 2500.0
     var padSticksEnabled = true
     var padDeadZone = 800.0
     var padSensitivity = 100.0
@@ -24,6 +25,7 @@ struct EditableProfile {
     var stickKeyRight = "key:d"
     var stickMouseEnabled = false
     var stickMouseRight = true
+    var stickMouseDeadZone = 1500.0
     var stickMouseMaxSpeed = 1200.0
     var gyroEnabled = true
     var gyroToMouse = false
@@ -42,6 +44,7 @@ struct EditableProfile {
                                   turbo: binding?.turbo ?? false)
         }
         turboIntervalMs = Double(profile.turboIntervalMs ?? 80)
+        stickDeadZone = Double(profile.sticks?.deadZone ?? 2500)
         padSticksEnabled = profile.padSticks?.enabled ?? true
         padDeadZone = Double(profile.padSticks?.deadZone ?? 800)
         padSensitivity = Double(profile.padSticks?.sensitivityPercent ?? 100)
@@ -57,6 +60,7 @@ struct EditableProfile {
         stickKeyRight = profile.stickKeys?.right?.stringValue ?? "key:d"
         stickMouseEnabled = profile.stickMouse?.enabled ?? false
         stickMouseRight = (profile.stickMouse?.stick ?? "right") != "left"
+        stickMouseDeadZone = Double(profile.stickMouse?.deadZone ?? 1500)
         stickMouseMaxSpeed = profile.stickMouse?.maxSpeed ?? 1200
         gyroEnabled = profile.gyro?.enabled ?? true
         gyroToMouse = profile.gyro?.output == "mouse"
@@ -79,6 +83,7 @@ struct EditableProfile {
             name: name,
             turboIntervalMs: Int(turboIntervalMs),
             bindings: profileBindings,
+            sticks: Profile.Sticks(deadZone: Int(stickDeadZone)),
             padSticks: Profile.PadSticks(enabled: padSticksEnabled,
                                          deadZone: Int(padDeadZone),
                                          sensitivityPercent: Int(padSensitivity)),
@@ -94,7 +99,7 @@ struct EditableProfile {
                                          right: OutputAction(string: stickKeyRight) ?? .none),
             stickMouse: Profile.StickMouse(enabled: stickMouseEnabled,
                                            stick: stickMouseRight ? "right" : "left",
-                                           deadZone: 1500,
+                                           deadZone: Int(stickMouseDeadZone),
                                            maxSpeed: stickMouseMaxSpeed),
             gyro: Profile.Gyro(enabled: gyroEnabled,
                                output: gyroToMouse ? "mouse" : "rightStick",
@@ -230,6 +235,9 @@ struct SettingsView: View {
 
     private var sticksPadsTab: some View {
         Form {
+            Section("Joysticks") {
+                slider("Dead zone (radial, rescaled)", $edit.stickDeadZone, 0...10000, "%.0f")
+            }
             Section("Trackpads as Sticks") {
                 Toggle("Enabled (pad drives its stick while touched)", isOn: $edit.padSticksEnabled)
                 slider("Dead zone", $edit.padDeadZone, 0...8000, "%.0f")
@@ -261,6 +269,7 @@ struct SettingsView: View {
                     Text("Right").tag(true)
                     Text("Left").tag(false)
                 }
+                slider("Dead zone", $edit.stickMouseDeadZone, 500...8000, "%.0f")
                 slider("Max speed (px/s)", $edit.stickMouseMaxSpeed, 200...4000, "%.0f")
             }
             Section("Turbo") {

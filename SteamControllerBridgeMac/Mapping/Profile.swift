@@ -120,6 +120,12 @@ struct Profile: Codable {
         var turbo: Bool?
     }
 
+    struct Sticks: Codable {
+        /// Radial deadzone for the physical sticks' virtual-pad output
+        /// (raw units, rescaled so motion ramps smoothly from the edge).
+        var deadZone: Int?
+    }
+
     struct PadSticks: Codable {
         var enabled: Bool?
         /// Pad deflection below this is ignored (raw units).
@@ -183,6 +189,7 @@ struct Profile: Codable {
     var turboIntervalMs: Int?
     /// Keys are PhysicalInput raw values; unknown keys are ignored.
     var bindings: [String: Binding]?
+    var sticks: Sticks?
     var padSticks: PadSticks?
     var padMouse: PadMouse?
     var stickKeys: StickKeys?
@@ -213,6 +220,7 @@ struct Profile: Codable {
             name: "Default",
             turboIntervalMs: 80,
             bindings: bindings,
+            sticks: Sticks(deadZone: 2500),
             padSticks: PadSticks(enabled: true, deadZone: 800, sensitivityPercent: 100),
             padMouse: PadMouse(enabled: false, pad: "right", sensitivityDivisor: 65),
             stickKeys: StickKeys(enabled: false, stick: "left", deadZone: 1500,
