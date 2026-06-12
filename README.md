@@ -20,78 +20,20 @@ Games using only Apple's GameController framework will **not** see the virtual
 pad — macOS filters virtual HID devices there by design. SDL-based games
 (most Mac Steam ports), Steam itself, and emulators do see it.
 
-## One-time setup
+## Permissions
 
-### 1. HID Virtual Device entitlement (required for the virtual gamepad)
+- **Input Monitoring** (required) — to read the controller's raw HID reports.
+  macOS prompts on first launch; otherwise enable the app under
+  System Settings → Privacy & Security → Input Monitoring.
+- **Accessibility** (only for keyboard/mouse output) — the app prompts when a
+  profile uses key or mouse bindings.
 
-The app needs the restricted entitlement `com.apple.developer.hid.virtual.device`:
+## Virtual gamepad
 
-1. In the [Apple Developer portal](https://developer.apple.com/account/resources/identifiers/list),
-   create/edit the app ID `com.arvindrao.SteamControllerBridgeMac` and look for
-   **HID Virtual Device** under **Additional Capabilities**. Enable it if present.
-   If it is not listed, request the entitlement from Apple (Account → contact /
-   entitlement request), describing the controller-bridge use case.
-2. Once the capability is on the app ID, uncomment the entitlement in
-   `SteamControllerBridgeMac/SteamControllerBridgeMac.entitlements` and let
-   Xcode regenerate the provisioning profile (automatic signing).
-3. Verify after building:
-   `codesign -d --entitlements - <path to SteamControllerBridgeMac.app>`
-
-Do **not** sign with the entitlement before the provisioning profile includes
-it — AMFI will kill the app at launch. Until the entitlement is in place the
-app builds and runs, but enabling the bridge reports that the virtual pad
-could not be created.
-
-> **Status:** the VirtualHID capability request for this app is **currently
-> under review by Apple**. Until it is granted, the standard build runs fine
-> for keyboard/mouse output, but the virtual gamepad cannot be created. The
-> AMFI route below is a stopgap for the virtual gamepad in the meantime.
-
-### 1b. AMFI route (advanced stopgap — reduces system security)
-
-> ## ⚠️ READ THIS FIRST
->
-> This route makes the virtual gamepad work **without** Apple's entitlement by
-> **disabling AMFI (Apple Mobile File Integrity)** — the macOS subsystem that
-> verifies code signatures and entitlements. **This lowers your Mac's security
-> system-wide:** with AMFI off, the OS will load improperly-signed code from
-> *any* application, not just this one.
->
-> - It requires booting into **Recovery** and **downgrading boot security**
->   (Apple Silicon) to set a boot argument. The change persists across reboots
->   until you undo it.
-> - It is **for your own machine only.** Do **not** ask anyone else to do this,
->   and do not ship a build that depends on it as the install path.
-> - The **proper, secure path is the entitlement above**, which is in review
->   with Apple. Prefer waiting for it if you can.
->
-> Proceed only if you understand and accept that you are weakening your own
-> system's code-signing enforcement.
-
-If you accept the trade-off:
-
-1. Reboot into Recovery (Apple Silicon: hold the power button → Options).
-   In **Startup Security Utility**, set the system to **Reduced Security**.
-2. From a Terminal (in Recovery, or after booting back with reduced security):
-   `sudo nvram boot-args="amfi_get_out_of_my_way=1"`
-   then reboot. (SIP can stay enabled; only AMFI needs the boot-arg.)
-3. Build the entitled binary with the helper script:
-   `tools/build_amfi.sh` — it builds Release and ad-hoc-signs it with the
-   `com.apple.developer.hid.virtual.device` entitlement, printing confirmation
-   that the entitlement is embedded.
-4. Move the resulting `build/Release/SteamControllerBridgeMac.app` to
-   `/Applications` and launch it from there.
-
-**To undo:** `sudo nvram -d boot-args` (and restore Full Security in Recovery),
-then reboot. Do this once Apple grants the entitlement.
-
-### 2. Input Monitoring permission
-
-On first launch macOS prompts for **Input Monitoring**
-(System Settings → Privacy & Security → Input Monitoring). Required to read
-the controller's raw HID reports. Re-grant (or
-`tccutil reset ListenEvent com.arvindrao.SteamControllerBridgeMac`) after
-signing changes during development.
+The virtual gamepad output relies on a restricted macOS capability for creating
+virtual HID devices. Keyboard/mouse and trackpad/gyro-to-mouse profiles work
+without it. Building the virtual-gamepad variant is documented separately in
+[RECOVERY_STEPS.md](RECOVERY_STEPS.md).
 
 ## Usage
 
@@ -125,8 +67,8 @@ use a keyboard/mouse mapping profile instead (no entitlement required).
 - Full button/axis check: open <https://hardwaretester.com/gamepad> in Chrome.
 - SDL check: `brew install sdl2` and run `controllermap` / `testcontroller`
   (also generates the gamecontrollerdb mapping string for SDL games).
-- Raw controller reports: menu → **Log Raw Reports**, watch in Console.app
-  (subsystem `com.arvindrao.SteamControllerBridgeMac`).
+- Raw controller reports: menu → **Log Raw Reports**, then read the dump at
+  `~/Library/Application Support/SteamControllerBridgeMac/rawreports.log`.
 
 ## Remapping
 
