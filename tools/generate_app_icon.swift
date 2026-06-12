@@ -29,12 +29,13 @@ func drawIcon(canvas: CGFloat) {
     body.lineWidth = 30 * s
     body.stroke()
 
-    // The two signature round trackpads, upper-outer.
+    // The two signature trackpads — square on the 2026 controller.
     for centerX: CGFloat in [382, 642] {
-        let radius: CGFloat = 72
-        let pad = NSBezierPath(ovalIn: NSRect(
-            x: (centerX - radius) * s, y: (548 - radius) * s,
-            width: radius * 2 * s, height: radius * 2 * s))
+        let half: CGFloat = 68
+        let pad = NSBezierPath(
+            roundedRect: NSRect(x: (centerX - half) * s, y: (548 - half) * s,
+                                width: half * 2 * s, height: half * 2 * s),
+            xRadius: 24 * s, yRadius: 24 * s)
         pad.lineWidth = 24 * s
         pad.stroke()
     }
