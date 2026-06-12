@@ -21,7 +21,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
 
-        statusItem.button?.image = Self.menuBarIcon()
+        statusItem.button?.image = Self.idleIcon
 
         let menu = NSMenu()
         statusLine.isEnabled = false
