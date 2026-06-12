@@ -27,6 +27,8 @@ struct EditableProfile {
     var stickMouseMaxSpeed = 1200.0
     var gyroEnabled = true
     var gyroToMouse = false
+    var gyroActivation = "leftTrigger"
+    var gyroSuppressMode = false
     var gyroThreshold = 64.0
     var gyroDeadZone = 45.0
     var gyroSensitivity = 26.0
@@ -58,6 +60,8 @@ struct EditableProfile {
         stickMouseMaxSpeed = profile.stickMouse?.maxSpeed ?? 1200
         gyroEnabled = profile.gyro?.enabled ?? true
         gyroToMouse = profile.gyro?.output == "mouse"
+        gyroActivation = profile.gyro?.activation ?? "leftTrigger"
+        gyroSuppressMode = profile.gyro?.activationMode == "suppress"
         gyroThreshold = Double(profile.gyro?.activationThreshold ?? 64)
         gyroDeadZone = Double(profile.gyro?.deadZone ?? 45)
         gyroSensitivity = Double(profile.gyro?.sensitivity ?? 26)
@@ -94,6 +98,8 @@ struct EditableProfile {
                                            maxSpeed: stickMouseMaxSpeed),
             gyro: Profile.Gyro(enabled: gyroEnabled,
                                output: gyroToMouse ? "mouse" : "rightStick",
+                               activation: gyroActivation,
+                               activationMode: gyroSuppressMode ? "suppress" : "hold",
                                activationThreshold: Int(gyroThreshold),
                                deadZone: Int(gyroDeadZone),
                                sensitivity: Int(gyroSensitivity),
@@ -264,15 +270,45 @@ struct SettingsView: View {
         .formStyle(.grouped)
     }
 
+    /// Gyro activator choices: special sources first, then every button.
+    private static let gyroActivationOptions: [(label: String, value: String)] = {
+        var options: [(String, String)] = [
+            ("Always On", "always"),
+            ("Left Trigger (soft pull)", "leftTrigger"),
+            ("Right Trigger (soft pull)", "rightTrigger"),
+            ("Left Pad Touch", "leftPadTouch"),
+            ("Right Pad Touch", "rightPadTouch"),
+            ("Left Stick Touch", "leftStickTouch"),
+            ("Right Stick Touch", "rightStickTouch"),
+        ]
+        options += PhysicalInput.allCases.map { ($0.label, $0.rawValue) }
+        return options
+    }()
+
     private var gyroTab: some View {
         Form {
-            Section("Gyro Aiming (active while left trigger is held)") {
+            Section("Gyro Aiming") {
                 Toggle("Enabled", isOn: $edit.gyroEnabled)
                 Picker("Output", selection: $edit.gyroToMouse) {
                     Text("Right Stick").tag(false)
                     Text("Mouse").tag(true)
                 }
-                slider("Activation: trigger threshold (0-255)", $edit.gyroThreshold, 0...255, "%.0f")
+            }
+            Section("Activation") {
+                Picker("Activator", selection: $edit.gyroActivation) {
+                    ForEach(Self.gyroActivationOptions, id: \.value) { option in
+                        Text(option.label).tag(option.value)
+                    }
+                }
+                Picker("Mode", selection: $edit.gyroSuppressMode) {
+                    Text("Hold to enable gyro").tag(false)
+                    Text("Hold to suppress gyro").tag(true)
+                }
+                .disabled(edit.gyroActivation == "always")
+                slider("Trigger threshold (0-255, trigger activators only)",
+                       $edit.gyroThreshold, 0...255, "%.0f")
+            }
+            Section("Tuning") {
                 slider("Dead zone", $edit.gyroDeadZone, 0...300, "%.0f")
                 slider("Stick sensitivity", $edit.gyroSensitivity, 1...80, "%.0f")
                 slider("Mouse sensitivity", $edit.gyroMouseSensitivity, 0.002...0.1, "%.3f")

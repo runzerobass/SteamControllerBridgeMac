@@ -162,7 +162,14 @@ struct Profile: Codable {
         var enabled: Bool?
         /// Where gyro aim goes: "rightStick" (default) or "mouse".
         var output: String?
-        /// Left-trigger value (0-255) that turns gyro aiming on.
+        /// What gates gyro aiming: "always", "leftTrigger" (default),
+        /// "rightTrigger", "leftPadTouch", "rightPadTouch",
+        /// "leftStickTouch", "rightStickTouch", or any physical input name.
+        var activation: String?
+        /// "hold" (default): gyro is on while the activator is held.
+        /// "suppress": gyro is on except while the activator is held.
+        var activationMode: String?
+        /// Trigger value (0-255) that counts as held, for trigger activators.
         var activationThreshold: Int?
         var deadZone: Int?
         /// Right-stick deflection multiplier (used when output is rightStick).
@@ -212,7 +219,8 @@ struct Profile: Codable {
                                  up: .key(KeyCodes.byName["w"]!), down: .key(KeyCodes.byName["s"]!),
                                  left: .key(KeyCodes.byName["a"]!), right: .key(KeyCodes.byName["d"]!)),
             stickMouse: StickMouse(enabled: false, stick: "right", deadZone: 1500, maxSpeed: 1200),
-            gyro: Gyro(enabled: true, output: "rightStick", activationThreshold: 64,
+            gyro: Gyro(enabled: true, output: "rightStick", activation: "leftTrigger",
+                       activationMode: "hold", activationThreshold: 64,
                        deadZone: 45, sensitivity: 26, mouseSensitivity: 0.018))
     }
 }
@@ -273,7 +281,8 @@ extension Profile {
                                      up: .key(KeyCodes.byName["w"]!), down: .key(KeyCodes.byName["s"]!),
                                      left: .key(KeyCodes.byName["a"]!), right: .key(KeyCodes.byName["d"]!))
         preset.padMouse = PadMouse(enabled: true, pad: "right", sensitivityDivisor: 65)
-        preset.gyro = Gyro(enabled: true, output: "mouse", activationThreshold: 64,
+        preset.gyro = Gyro(enabled: true, output: "mouse", activation: "rightPadTouch",
+                           activationMode: "hold", activationThreshold: 64,
                            deadZone: 45, sensitivity: 26, mouseSensitivity: 0.018)
         var b = preset.bindings ?? [:]
         b[PhysicalInput.a.rawValue] = Binding(output: .key(KeyCodes.byName["space"]!), turbo: false)

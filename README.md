@@ -124,9 +124,16 @@ the macOS cursor laptop-trackpad style (finger-travel deltas). `pad` picks
 with `"rightPadClick": { "output": "mouse:left" }` for tap-to-click.
 
 **Gyro as mouse:** set `gyro.output` to `"mouse"` to aim the cursor with the
-gyro instead of the right stick (while the left trigger is held);
-`mouseSensitivity` scales it (default 0.018). Both mouse modes require the
-Accessibility permission, like key bindings.
+gyro instead of the right stick; `mouseSensitivity` scales it (default
+0.018). Both mouse modes require the Accessibility permission, like key
+bindings.
+
+**Gyro activation:** `gyro.activation` picks what gates gyro aiming —
+`always`, `leftTrigger` (default), `rightTrigger`, `leftPadTouch`,
+`rightPadTouch`, `leftStickTouch`, `rightStickTouch`, or any physical
+button name. `gyro.activationMode` is `hold` (gyro on while held, default)
+or `suppress` (gyro always on except while held).
+`activationThreshold` (0-255) applies to trigger activators.
 
 **Stick to keys (WASD):** set `stickKeys.enabled` to `true` to turn a
 stick's cardinal directions into outputs (defaults: left stick → W/A/S/D;

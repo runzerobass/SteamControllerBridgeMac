@@ -44,8 +44,33 @@ final class MappingEngine {
     private var stickMouseIsRight = true
     private var stickMouseDeadZone = 1500
     private var stickMouseMaxSpeed = 1200.0
+    enum GyroActivator {
+        case always
+        case leftTrigger
+        case rightTrigger
+        case buttons(SCButtons)
+
+        /// Parses a profile activation string; see Profile.Gyro.activation.
+        static func parse(_ string: String) -> GyroActivator? {
+            switch string {
+            case "always": return .always
+            case "leftTrigger": return .leftTrigger
+            case "rightTrigger": return .rightTrigger
+            case "leftPadTouch": return .buttons(.lPadActive)
+            case "rightPadTouch": return .buttons(.rPadActive)
+            case "leftStickTouch": return .buttons(.lStickTouch)
+            case "rightStickTouch": return .buttons(.rStickTouch)
+            default:
+                guard let input = PhysicalInput(rawValue: string) else { return nil }
+                return .buttons(input.buttonMask)
+            }
+        }
+    }
+
     private var gyroEnabled = true
     private var gyroToMouse = false
+    private var gyroActivator: GyroActivator = .leftTrigger
+    private var gyroSuppressMode = false
     private var gyroActivationThreshold: UInt8 = 64
     private var gyroDeadZone = 45
     private var gyroSensitivity = 26
@@ -105,6 +130,8 @@ final class MappingEngine {
         stickMouseMaxSpeed = profile.stickMouse?.maxSpeed ?? 1200
         gyroEnabled = profile.gyro?.enabled ?? true
         gyroToMouse = profile.gyro?.output == "mouse"
+        gyroActivator = GyroActivator.parse(profile.gyro?.activation ?? "leftTrigger") ?? .leftTrigger
+        gyroSuppressMode = profile.gyro?.activationMode == "suppress"
         gyroActivationThreshold = UInt8(clamping: profile.gyro?.activationThreshold ?? 64)
         gyroDeadZone = profile.gyro?.deadZone ?? 45
         gyroSensitivity = min(max(profile.gyro?.sensitivity ?? 26, 1), 80)
@@ -260,7 +287,14 @@ final class MappingEngine {
         guard gyroEnabled else { return nil }
         let rawYaw = Double(input.gyroZ)
         let rawPitch = Double(input.gyroX)
-        let active = input.leftTrigger >= gyroActivationThreshold
+        let held: Bool
+        switch gyroActivator {
+        case .always: held = true
+        case .leftTrigger: held = input.leftTrigger >= gyroActivationThreshold
+        case .rightTrigger: held = input.rightTrigger >= gyroActivationThreshold
+        case .buttons(let mask): held = input.buttons.contains(mask)
+        }
+        let active = gyroSuppressMode ? !held : held
 
         if !active {
             gyroBiasYaw += (rawYaw - gyroBiasYaw) * gyroBiasSlowWeight
