@@ -149,6 +149,8 @@ struct SettingsView: View {
     @State private var edit: EditableProfile
     @State private var profileName: String
     @State private var saveStatus = ""
+    @State private var profileSelection = ""
+    @State private var userProfiles = ProfileStore.listUserProfiles()
     private let onSave: (Profile) -> Void
 
     init(profile: Profile, onSave: @escaping (Profile) -> Void) {
@@ -193,18 +195,81 @@ struct SettingsView: View {
     }
 
     private var presetBar: some View {
-        HStack {
-            Text("Preset:")
-            ForEach(Profile.presets, id: \.name) { preset in
-                Button(preset.name) {
-                    edit = EditableProfile(preset.profile)
-                    profileName = preset.name
-                    saveStatus = "Loaded preset \"\(preset.name)\" — not saved yet"
+        HStack(spacing: 8) {
+            Picker("Profile", selection: $profileSelection) {
+                Text("Current").tag("")
+                Section("Presets") {
+                    ForEach(Profile.presets, id: \.name) { preset in
+                        Text(preset.name).tag("preset:" + preset.name)
+                    }
+                }
+                if !userProfiles.isEmpty {
+                    Section("My Profiles") {
+                        ForEach(userProfiles, id: \.self) { name in
+                            Text(name).tag("user:" + name)
+                        }
+                    }
                 }
             }
+            .frame(maxWidth: 280)
+            .onChange(of: profileSelection) { _, selection in
+                loadSelection(selection)
+            }
+
+            TextField("Profile name", text: $profileName)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 150)
+            Button("Save As") {
+                saveAsUserProfile()
+            }
+            .disabled(profileName.trimmingCharacters(in: .whitespaces).isEmpty)
+            Button(role: .destructive) {
+                deleteSelectedUserProfile()
+            } label: {
+                Image(systemName: "trash")
+            }
+            .disabled(!profileSelection.hasPrefix("user:"))
             Spacer()
         }
         .padding(10)
+    }
+
+    private func loadSelection(_ selection: String) {
+        if selection.hasPrefix("preset:") {
+            let name = String(selection.dropFirst(7))
+            guard let preset = Profile.presets.first(where: { $0.name == name }) else { return }
+            edit = EditableProfile(preset.profile)
+            profileName = name
+            saveStatus = "Loaded preset \"\(name)\" — Save & Apply to use it"
+        } else if selection.hasPrefix("user:") {
+            let name = String(selection.dropFirst(5))
+            guard let profile = ProfileStore.loadUserProfile(named: name) else { return }
+            edit = EditableProfile(profile)
+            profileName = name
+            saveStatus = "Loaded \"\(name)\" — Save & Apply to use it"
+        }
+    }
+
+    private func saveAsUserProfile() {
+        let name = profileName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        do {
+            try ProfileStore.saveUserProfile(edit.toProfile(name: name), named: name)
+            userProfiles = ProfileStore.listUserProfiles()
+            profileSelection = "user:" + name
+            saveStatus = "Saved profile \"\(name)\""
+        } catch {
+            saveStatus = "Could not save \"\(name)\": \(error.localizedDescription)"
+        }
+    }
+
+    private func deleteSelectedUserProfile() {
+        guard profileSelection.hasPrefix("user:") else { return }
+        let name = String(profileSelection.dropFirst(5))
+        ProfileStore.deleteUserProfile(named: name)
+        userProfiles = ProfileStore.listUserProfiles()
+        profileSelection = ""
+        saveStatus = "Deleted profile \"\(name)\""
     }
 
     private var buttonsTab: some View {

@@ -24,6 +24,42 @@ enum ProfileStore {
         }
     }
 
+    // MARK: - Named user profiles
+
+    static let userProfilesDir = FileManager.default
+        .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("SteamControllerBridgeMac/profiles", isDirectory: true)
+
+    static func listUserProfiles() -> [String] {
+        let names = (try? FileManager.default.contentsOfDirectory(at: userProfilesDir,
+                                                                  includingPropertiesForKeys: nil))?
+            .filter { $0.pathExtension == "json" }
+            .map { $0.deletingPathExtension().lastPathComponent } ?? []
+        return names.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    static func loadUserProfile(named name: String) -> Profile? {
+        guard let data = try? Data(contentsOf: userProfileURL(name)) else { return nil }
+        return try? JSONDecoder().decode(Profile.self, from: data)
+    }
+
+    static func saveUserProfile(_ profile: Profile, named name: String) throws {
+        try FileManager.default.createDirectory(at: userProfilesDir, withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(profile).write(to: userProfileURL(name), options: .atomic)
+    }
+
+    static func deleteUserProfile(named name: String) {
+        try? FileManager.default.removeItem(at: userProfileURL(name))
+    }
+
+    private static func userProfileURL(_ name: String) -> URL {
+        let safe = name.replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        return userProfilesDir.appendingPathComponent(safe + ".json")
+    }
+
     static func save(_ profile: Profile) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                 withIntermediateDirectories: true)
