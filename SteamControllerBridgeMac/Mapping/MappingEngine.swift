@@ -106,6 +106,35 @@ final class MappingEngine {
     private var leftPadTickState = PadTickState()
     private var rightPadTickState = PadTickState()
 
+    /// Debounce for stick-to-keys: hysteresis plus a short confirmation
+    /// window so boundary flutter and release spring-back don't ghost keys.
+    private struct DirectionLatch {
+        var pressed = false
+        var candidateSince: Double?
+
+        mutating func update(beyond: Bool, holds: Bool, now: Double, confirmAfter: Double) -> Bool {
+            if pressed {
+                if !holds {
+                    pressed = false
+                    candidateSince = nil
+                }
+            } else if beyond {
+                if let since = candidateSince {
+                    if now - since >= confirmAfter { pressed = true }
+                } else {
+                    candidateSince = now
+                }
+            } else {
+                candidateSince = nil
+            }
+            return pressed
+        }
+    }
+
+    private var stickKeyLatches = (up: DirectionLatch(), down: DirectionLatch(),
+                                   left: DirectionLatch(), right: DirectionLatch())
+    private let stickKeyConfirmTime = 0.016
+
     init(profile: Profile) {
         apply(profile)
     }
@@ -219,12 +248,16 @@ final class MappingEngine {
         }
 
         // Trackpads drive their stick while touched (unless on mouse duty).
+        var leftAxisFromPad = false
+        var rightAxisFromPad = false
         if padSticksEnabled {
             if input.buttons.contains(.lPadActive), !(padMouseEnabled && !padMouseIsRight) {
                 (leftX, leftY) = padAsStick(x: input.leftPadX, y: input.leftPadY)
+                leftAxisFromPad = true
             }
             if input.buttons.contains(.rPadActive), !(padMouseEnabled && padMouseIsRight) {
                 (rightX, rightY) = padAsStick(x: input.rightPadX, y: input.rightPadY)
+                rightAxisFromPad = true
             }
         }
 
@@ -239,30 +272,50 @@ final class MappingEngine {
             }
         }
 
-        // Stick-to-keys (e.g. WASD): cardinal directions emit outputs and
-        // the stick stops driving its virtual axis.
+        // Stick-to-keys (e.g. WASD). Reads the PHYSICAL stick only — pad
+        // overrides must not type keys. Hysteresis (release at 70% of the
+        // press threshold) plus a short confirmation window suppress ghost
+        // presses from boundary flutter and release spring-back.
         if stickKeysEnabled {
-            let sx = stickKeysIsLeft ? leftX : rightX
-            let sy = stickKeysIsLeft ? leftY : rightY
-            if sy > stickKeysDeadZone { emit(stickKeysOutputs.up, into: &output, buttons: &buttons, dpad: &dpad) }
-            if sy < -stickKeysDeadZone { emit(stickKeysOutputs.down, into: &output, buttons: &buttons, dpad: &dpad) }
-            if sx < -stickKeysDeadZone { emit(stickKeysOutputs.left, into: &output, buttons: &buttons, dpad: &dpad) }
-            if sx > stickKeysDeadZone { emit(stickKeysOutputs.right, into: &output, buttons: &buttons, dpad: &dpad) }
-            if stickKeysIsLeft { (leftX, leftY) = (0, 0) } else { (rightX, rightY) = (0, 0) }
+            let sx = Int(stickKeysIsLeft ? input.leftStickX : input.rightStickX)
+            let sy = Int(stickKeysIsLeft ? input.leftStickY : input.rightStickY)
+            let press = stickKeysDeadZone
+            let release = stickKeysDeadZone * 7 / 10
+            if stickKeyLatches.up.update(beyond: sy >= press, holds: sy >= release,
+                                         now: now, confirmAfter: stickKeyConfirmTime) {
+                emit(stickKeysOutputs.up, into: &output, buttons: &buttons, dpad: &dpad)
+            }
+            if stickKeyLatches.down.update(beyond: -sy >= press, holds: -sy >= release,
+                                           now: now, confirmAfter: stickKeyConfirmTime) {
+                emit(stickKeysOutputs.down, into: &output, buttons: &buttons, dpad: &dpad)
+            }
+            if stickKeyLatches.left.update(beyond: -sx >= press, holds: -sx >= release,
+                                           now: now, confirmAfter: stickKeyConfirmTime) {
+                emit(stickKeysOutputs.left, into: &output, buttons: &buttons, dpad: &dpad)
+            }
+            if stickKeyLatches.right.update(beyond: sx >= press, holds: sx >= release,
+                                            now: now, confirmAfter: stickKeyConfirmTime) {
+                emit(stickKeysOutputs.right, into: &output, buttons: &buttons, dpad: &dpad)
+            }
+            // The stick stops driving its virtual axis; a pad override of
+            // the same axis still passes through.
+            if stickKeysIsLeft, !leftAxisFromPad { (leftX, leftY) = (0, 0) }
+            if !stickKeysIsLeft, !rightAxisFromPad { (rightX, rightY) = (0, 0) }
         }
 
-        // Stick-to-mouse: deflection becomes cursor velocity, and the stick
-        // stops driving its virtual axis.
+        // Stick-to-mouse: PHYSICAL stick deflection becomes cursor velocity,
+        // and the stick stops driving its virtual axis.
         if stickMouseEnabled {
-            let sx = stickMouseIsRight ? rightX : leftX
-            let sy = stickMouseIsRight ? rightY : leftY
+            let sx = Int(stickMouseIsRight ? input.rightStickX : input.leftStickX)
+            let sy = Int(stickMouseIsRight ? input.rightStickY : input.leftStickY)
             func velocity(_ value: Int) -> Double {
                 guard abs(value) >= stickMouseDeadZone else { return 0 }
                 return Double(value) / 32767.0 * stickMouseMaxSpeed
             }
             output.mouseDX += velocity(sx) * dt
             output.mouseDY += -velocity(sy) * dt
-            if stickMouseIsRight { (rightX, rightY) = (0, 0) } else { (leftX, leftY) = (0, 0) }
+            if stickMouseIsRight, !rightAxisFromPad { (rightX, rightY) = (0, 0) }
+            if !stickMouseIsRight, !leftAxisFromPad { (leftX, leftY) = (0, 0) }
         }
 
         report.buttons = buttons
