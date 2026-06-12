@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: StatusItemController!
     private var settingsWindow: NSWindow?
 
+    private static let bridgeEnabledKey = "bridgeEnabled"
     private var bridgeEnabled = false
     private var rawLogging = false
     private var connection: SteamControllerDevice.ConnectionState = .stopped
@@ -38,6 +39,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if !PermissionsCoordinator.inputMonitoringGranted {
             PermissionsCoordinator.requestInputMonitoring()
+        }
+        // Restore the bridge to how it was left at last quit.
+        if UserDefaults.standard.bool(forKey: Self.bridgeEnabledKey) {
+            enableBridge()
         }
         refreshUI()
     }
@@ -81,6 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func enableBridge() {
         bridgeEnabled = true
+        UserDefaults.standard.set(true, forKey: Self.bridgeEnabledKey)
         gamepadError = nil
         promptAccessibilityIfNeeded()
         Task { @MainActor in
@@ -100,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func disableBridge() {
         bridgeEnabled = false
+        UserDefaults.standard.set(false, forKey: Self.bridgeEnabledKey)
         keyboardMouse.releaseAll()
         controller.stop()
         gamepad.destroy()
