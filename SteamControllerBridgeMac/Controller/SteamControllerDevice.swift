@@ -80,9 +80,11 @@ final class SteamControllerDevice {
 
         IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
 
-        // Seize so the controller's built-in lizard-mode keyboard/mouse
-        // collections don't keep driving the OS cursor alongside us.
-        let result = IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeSeizeDevice))
+        // Open the manager UNSEIZED — it only handles discovery and report
+        // delivery. The exclusive seize is asserted per-device in
+        // deviceMatched; mixing a manager-level seize with the device-level
+        // one breaks input delivery.
+        let result = IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
         self.manager = manager
 
         if result == kIOReturnNotPermitted {
@@ -105,7 +107,7 @@ final class SteamControllerDevice {
             self.device = nil
         }
         if let manager {
-            IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeSeizeDevice))
+            IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
             IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
             self.manager = nil
         }
@@ -143,10 +145,16 @@ final class SteamControllerDevice {
             ?? "Steam Controller"
         log.notice("Controller matched: \(name, privacy: .public)")
 
-        // Device-level seize: a stronger exclusive claim than the manager's,
-        // so other apps' gamepad/WebHID layers (e.g. a browser launching a
-        // cloud-gaming session) can't grab the controller out from under us.
-        IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeSeizeDevice))
+        // Device-level seize: the exclusive claim that keeps other apps'
+        // gamepad/WebHID layers (e.g. a browser launching a cloud-gaming
+        // session) from grabbing the controller out from under us.
+        let openResult = IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeSeizeDevice))
+        if openResult == kIOReturnNotPermitted {
+            log.error("IOHIDDeviceOpen denied: Input Monitoring permission missing")
+            self.device = nil
+            onStateChange?(.permissionDenied)
+            return
+        }
         registerInputCallback(device)
 
         lastInputTime = ProcessInfo.processInfo.systemUptime
