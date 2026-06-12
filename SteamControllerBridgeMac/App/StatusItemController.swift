@@ -57,8 +57,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         toggleItem.title = bridgeEnabled ? "Disable Bridge" : "Enable Bridge"
         rawLogItem.state = rawLogging ? .on : .off
         permissionItem.isHidden = !permissionNeeded
-        // Dimmed while not actively bridging.
-        statusItem.button?.appearsDisabled = !bridging
     }
 
     /// The Steam Controller outline as a template image, so it follows the
