@@ -34,6 +34,16 @@ final class MappingEngine {
     private var padMouseEnabled = false
     private var padMouseIsRight = true
     private var padMouseDivisor = 65
+    private var stickKeysEnabled = false
+    private var stickKeysIsLeft = true
+    private var stickKeysDeadZone = 1500
+    private var stickKeysOutputs: (up: OutputAction, down: OutputAction,
+                                   left: OutputAction, right: OutputAction) =
+        (.none, .none, .none, .none)
+    private var stickMouseEnabled = false
+    private var stickMouseIsRight = true
+    private var stickMouseDeadZone = 1500
+    private var stickMouseMaxSpeed = 1200.0
     private var gyroEnabled = true
     private var gyroToMouse = false
     private var gyroActivationThreshold: UInt8 = 64
@@ -53,6 +63,7 @@ final class MappingEngine {
     private var padMouseWasTouched = false
     private var padMouseLastX = 0
     private var padMouseLastY = 0
+    private var lastMapTime: Double?
 
     init(profile: Profile) {
         apply(profile)
@@ -81,6 +92,17 @@ final class MappingEngine {
         padMouseEnabled = profile.padMouse?.enabled ?? false
         padMouseIsRight = (profile.padMouse?.pad ?? "right") != "left"
         padMouseDivisor = max(profile.padMouse?.sensitivityDivisor ?? 65, 1)
+        stickKeysEnabled = profile.stickKeys?.enabled ?? false
+        stickKeysIsLeft = (profile.stickKeys?.stick ?? "left") != "right"
+        stickKeysDeadZone = profile.stickKeys?.deadZone ?? 1500
+        stickKeysOutputs = (profile.stickKeys?.up ?? .none,
+                            profile.stickKeys?.down ?? .none,
+                            profile.stickKeys?.left ?? .none,
+                            profile.stickKeys?.right ?? .none)
+        stickMouseEnabled = profile.stickMouse?.enabled ?? false
+        stickMouseIsRight = (profile.stickMouse?.stick ?? "right") != "left"
+        stickMouseDeadZone = profile.stickMouse?.deadZone ?? 1500
+        stickMouseMaxSpeed = profile.stickMouse?.maxSpeed ?? 1200
         gyroEnabled = profile.gyro?.enabled ?? true
         gyroToMouse = profile.gyro?.output == "mouse"
         gyroActivationThreshold = UInt8(clamping: profile.gyro?.activationThreshold ?? 64)
@@ -88,8 +110,15 @@ final class MappingEngine {
         gyroSensitivity = min(max(profile.gyro?.sensitivity ?? 26, 1), 80)
         gyroMouseSensitivity = profile.gyro?.mouseSensitivity ?? 0.018
 
-        if padMouseEnabled || (gyroEnabled && gyroToMouse) {
+        if padMouseEnabled || stickMouseEnabled || (gyroEnabled && gyroToMouse) {
             usesKeyboardMouse = true
+        }
+        if stickKeysEnabled {
+            for action in [stickKeysOutputs.up, stickKeysOutputs.down,
+                           stickKeysOutputs.left, stickKeysOutputs.right] {
+                if case .key = action { usesKeyboardMouse = true }
+                if case .mouse = action { usesKeyboardMouse = true }
+            }
         }
     }
 
@@ -99,28 +128,18 @@ final class MappingEngine {
         var buttons: GamepadReport.Buttons = []
         var dpad = (up: false, down: false, left: false, right: false)
 
+        let now = CACurrentMediaTime()
+        // Frame time for velocity-based outputs; clamped so a stall can't
+        // fling the cursor.
+        let dt = min(max(now - (lastMapTime ?? now), 0), 0.05)
+        lastMapTime = now
         // Turbo pulses on a shared phase so multiple turbo buttons stay in sync.
-        let turboPhaseOn = Int(CACurrentMediaTime() / turboInterval) % 2 == 0
+        let turboPhaseOn = Int(now / turboInterval) % 2 == 0
 
         for binding in bindings where input.buttons.contains(binding.mask) {
             if binding.turbo && !turboPhaseOn { continue }
-            switch binding.output {
-            case .none:
-                break
-            case .button(let button):
-                buttons.insert(button)
-            case .dpad(.up): dpad.up = true
-            case .dpad(.down): dpad.down = true
-            case .dpad(.left): dpad.left = true
-            case .dpad(.right): dpad.right = true
-            case .key(let code):
-                output.keys.insert(code)
-            case .mouse(let button):
-                output.mouseButtons.insert(button)
-            }
+            emit(binding.output, into: &output, buttons: &buttons, dpad: &dpad)
         }
-        report.buttons = buttons
-        report.hat = hatValue(up: dpad.up, down: dpad.down, left: dpad.left, right: dpad.right)
         report.leftTrigger = input.leftTrigger
         report.rightTrigger = input.rightTrigger
 
@@ -168,12 +187,61 @@ final class MappingEngine {
             }
         }
 
+        // Stick-to-keys (e.g. WASD): cardinal directions emit outputs and
+        // the stick stops driving its virtual axis.
+        if stickKeysEnabled {
+            let sx = stickKeysIsLeft ? leftX : rightX
+            let sy = stickKeysIsLeft ? leftY : rightY
+            if sy > stickKeysDeadZone { emit(stickKeysOutputs.up, into: &output, buttons: &buttons, dpad: &dpad) }
+            if sy < -stickKeysDeadZone { emit(stickKeysOutputs.down, into: &output, buttons: &buttons, dpad: &dpad) }
+            if sx < -stickKeysDeadZone { emit(stickKeysOutputs.left, into: &output, buttons: &buttons, dpad: &dpad) }
+            if sx > stickKeysDeadZone { emit(stickKeysOutputs.right, into: &output, buttons: &buttons, dpad: &dpad) }
+            if stickKeysIsLeft { (leftX, leftY) = (0, 0) } else { (rightX, rightY) = (0, 0) }
+        }
+
+        // Stick-to-mouse: deflection becomes cursor velocity, and the stick
+        // stops driving its virtual axis.
+        if stickMouseEnabled {
+            let sx = stickMouseIsRight ? rightX : leftX
+            let sy = stickMouseIsRight ? rightY : leftY
+            func velocity(_ value: Int) -> Double {
+                guard abs(value) >= stickMouseDeadZone else { return 0 }
+                return Double(value) / 32767.0 * stickMouseMaxSpeed
+            }
+            output.mouseDX += velocity(sx) * dt
+            output.mouseDY += -velocity(sy) * dt
+            if stickMouseIsRight { (rightX, rightY) = (0, 0) } else { (leftX, leftY) = (0, 0) }
+        }
+
+        report.buttons = buttons
+        report.hat = hatValue(up: dpad.up, down: dpad.down, left: dpad.left, right: dpad.right)
         report.leftStickX = Int16(clamping: leftX)
         report.leftStickY = flipY(Int16(clamping: leftY))
         report.rightStickX = Int16(clamping: rightX)
         report.rightStickY = flipY(Int16(clamping: rightY))
         output.report = report
         return output
+    }
+
+    /// Routes one output action into the right bucket (pad button, dpad,
+    /// key, or mouse button).
+    private func emit(_ action: OutputAction, into output: inout MappedOutput,
+                      buttons: inout GamepadReport.Buttons,
+                      dpad: inout (up: Bool, down: Bool, left: Bool, right: Bool)) {
+        switch action {
+        case .none:
+            break
+        case .button(let button):
+            buttons.insert(button)
+        case .dpad(.up): dpad.up = true
+        case .dpad(.down): dpad.down = true
+        case .dpad(.left): dpad.left = true
+        case .dpad(.right): dpad.right = true
+        case .key(let code):
+            output.keys.insert(code)
+        case .mouse(let button):
+            output.mouseButtons.insert(button)
+        }
     }
 
     /// Treats the absolute touch position as stick deflection.

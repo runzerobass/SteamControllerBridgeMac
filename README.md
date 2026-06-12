@@ -122,6 +122,19 @@ gyro instead of the right stick (while the left trigger is held);
 `mouseSensitivity` scales it (default 0.018). Both mouse modes require the
 Accessibility permission, like key bindings.
 
+**Stick to keys (WASD):** set `stickKeys.enabled` to `true` to turn a
+stick's cardinal directions into outputs (defaults: left stick → W/A/S/D;
+each direction accepts any output form). The stick stops driving its
+virtual axis while enabled.
+
+**Stick to mouse:** set `stickMouse.enabled` to `true` for joystick-style
+cursor control (deflection = velocity). `stick` picks left/right (default
+right), `maxSpeed` is pixels/second at full deflection (default 1200).
+
+A full keyboard/mouse "desktop mode" profile is: `stickKeys` on,
+`stickMouse` on, button bindings to keys, and triggers via
+`leftTriggerFull`/`rightTriggerFull` to `mouse:right`/`mouse:left`.
+
 ## Default layout
 
 ABXY, bumpers, stick clicks, and d-pad map 1:1. View→Back, Menu→Start,

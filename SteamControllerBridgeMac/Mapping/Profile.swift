@@ -127,6 +127,29 @@ struct Profile: Codable {
         var sensitivityPercent: Int?
     }
 
+    struct StickKeys: Codable {
+        var enabled: Bool?
+        /// Which stick: "left" (default) or "right".
+        var stick: String?
+        /// Deflection below this is ignored (raw units).
+        var deadZone: Int?
+        /// Output per cardinal direction; any output form works
+        /// (keys, mouse buttons, even gamepad buttons).
+        var up: OutputAction?
+        var down: OutputAction?
+        var left: OutputAction?
+        var right: OutputAction?
+    }
+
+    struct StickMouse: Codable {
+        var enabled: Bool?
+        /// Which stick: "left" or "right" (default).
+        var stick: String?
+        var deadZone: Int?
+        /// Cursor speed in pixels/second at full deflection.
+        var maxSpeed: Double?
+    }
+
     struct PadMouse: Codable {
         var enabled: Bool?
         /// Which pad drives the cursor: "left" or "right".
@@ -155,6 +178,8 @@ struct Profile: Codable {
     var bindings: [String: Binding]?
     var padSticks: PadSticks?
     var padMouse: PadMouse?
+    var stickKeys: StickKeys?
+    var stickMouse: StickMouse?
     var gyro: Gyro?
 
     /// The built-in layout: the Windows app's defaults (paddles double as
@@ -183,6 +208,10 @@ struct Profile: Codable {
             bindings: bindings,
             padSticks: PadSticks(enabled: true, deadZone: 800, sensitivityPercent: 100),
             padMouse: PadMouse(enabled: false, pad: "right", sensitivityDivisor: 65),
+            stickKeys: StickKeys(enabled: false, stick: "left", deadZone: 1500,
+                                 up: .key(KeyCodes.byName["w"]!), down: .key(KeyCodes.byName["s"]!),
+                                 left: .key(KeyCodes.byName["a"]!), right: .key(KeyCodes.byName["d"]!)),
+            stickMouse: StickMouse(enabled: false, stick: "right", deadZone: 1500, maxSpeed: 1200),
             gyro: Gyro(enabled: true, output: "rightStick", activationThreshold: 64,
                        deadZone: 45, sensitivity: 26, mouseSensitivity: 0.018))
     }
