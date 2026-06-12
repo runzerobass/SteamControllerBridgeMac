@@ -54,7 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Runs on the main thread (the controller is run-loop scheduled):
         // parse → map → forward only on change.
         var lastSent: GamepadReport?
-        controller.onInput = { [gamepad, engine, keyboardMouse] state in
+        controller.onInput = { [gamepad, engine, keyboardMouse, controller] state in
             let output = engine.map(state)
             if output.report != lastSent {
                 lastSent = output.report
@@ -62,6 +62,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             keyboardMouse.apply(keys: output.keys, mouseButtons: output.mouseButtons)
             keyboardMouse.moveMouse(dx: output.mouseDX, dy: output.mouseDY)
+            if output.leftPadTick {
+                controller.sendHapticClick(rightPad: false, gainDB: engine.padTickGain)
+            }
+            if output.rightPadTick {
+                controller.sendHapticClick(rightPad: true, gainDB: engine.padTickGain)
+            }
         }
         controller.onStateChange = { [weak self] state in
             self?.connection = state

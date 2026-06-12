@@ -107,6 +107,19 @@ final class SteamControllerDevice {
         onStateChange?(.stopped)
     }
 
+    /// Single-attempt, fire-and-forget: tick haptics are frequent and a
+    /// dropped one is imperceptible, so retries would only add latency.
+    func sendHapticClick(rightPad: Bool, gainDB: Int8) {
+        guard let device else { return }
+        let report = SteamControllerProtocol.hapticClick(
+            side: rightPad ? SteamControllerProtocol.hapticSideRight
+                           : SteamControllerProtocol.hapticSideLeft,
+            gainDB: gainDB)
+        _ = report.withUnsafeBufferPointer {
+            IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, 0x82, $0.baseAddress!, $0.count)
+        }
+    }
+
     func sendRumble(intensity: UInt16, leftSpeed: UInt16, leftGain: Int8,
                     rightSpeed: UInt16, rightGain: Int8) {
         let report = SteamControllerProtocol.rumbleReport(

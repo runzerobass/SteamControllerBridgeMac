@@ -10,6 +10,9 @@ struct MappedOutput {
     /// Cursor movement in pixels for this frame (pad-mouse + gyro-mouse).
     var mouseDX = 0.0
     var mouseDY = 0.0
+    /// Trackpad tick haptics to fire this frame (lizard-mode feel).
+    var leftPadTick = false
+    var rightPadTick = false
 }
 
 /// Translates parsed controller state into mapped output, driven by the
@@ -89,6 +92,19 @@ final class MappingEngine {
     private var padMouseLastX = 0
     private var padMouseLastY = 0
     private var lastMapTime: Double?
+
+    /// Finger travel (raw units) per haptic tick, and the tick loudness.
+    private let padTickTravel = 1400
+    private let padTickGainDB: Int8 = -24
+    private let padTickMinInterval = 0.012
+    private struct PadTickState {
+        var wasTouched = false
+        var lastX = 0
+        var lastY = 0
+        var lastTickTime = 0.0
+    }
+    private var leftPadTickState = PadTickState()
+    private var rightPadTickState = PadTickState()
 
     init(profile: Profile) {
         apply(profile)
@@ -176,6 +192,15 @@ final class MappingEngine {
         var leftY = Int(input.leftStickY)
         var rightX = Int(input.rightStickX)
         var rightY = Int(input.rightStickY)
+
+        // Trackpad tick haptics: a quiet click on touch-down and per unit of
+        // finger travel, recreating the lizard-mode feel.
+        output.leftPadTick = padTick(&leftPadTickState, now: now,
+                                     touched: input.buttons.contains(.lPadActive),
+                                     x: Int(input.leftPadX), y: Int(input.leftPadY))
+        output.rightPadTick = padTick(&rightPadTickState, now: now,
+                                      touched: input.buttons.contains(.rPadActive),
+                                      x: Int(input.rightPadX), y: Int(input.rightPadY))
 
         // Pad-as-mouse: laptop-trackpad-style cursor deltas from finger travel.
         if padMouseEnabled {
@@ -269,6 +294,26 @@ final class MappingEngine {
         case .mouse(let button):
             output.mouseButtons.insert(button)
         }
+    }
+
+    /// The tick gain, exposed so the pipeline sends a consistent loudness.
+    var padTickGain: Int8 { padTickGainDB }
+
+    /// True when a haptic tick should fire: on touch-down, then every
+    /// `padTickTravel` raw units of finger movement, rate-limited.
+    private func padTick(_ state: inout PadTickState, now: Double,
+                         touched: Bool, x: Int, y: Int) -> Bool {
+        defer { state.wasTouched = touched }
+        guard touched else { return false }
+        if !state.wasTouched {
+            (state.lastX, state.lastY, state.lastTickTime) = (x, y, now)
+            return true
+        }
+        let travel = abs(x - state.lastX) + abs(y - state.lastY)
+        guard travel >= padTickTravel,
+              now - state.lastTickTime >= padTickMinInterval else { return false }
+        (state.lastX, state.lastY, state.lastTickTime) = (x, y, now)
+        return true
     }
 
     /// Treats the absolute touch position as stick deflection.

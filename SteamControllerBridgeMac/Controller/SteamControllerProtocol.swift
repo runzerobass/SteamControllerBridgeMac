@@ -62,6 +62,16 @@ enum SteamControllerProtocol {
         return report
     }
 
+    static let hapticSideLeft: UInt8 = 0x01
+    static let hapticSideRight: UInt8 = 0x02
+
+    /// Fires the firmware's built-in click effect on one pad's actuator —
+    /// the same subtle tick lizard mode plays. Output report 0x82:
+    /// [id, side, command (2 = click, 0 = off), gain dB].
+    static func hapticClick(side: UInt8, gainDB: Int8) -> [UInt8] {
+        [0x82, side, 0x02, UInt8(bitPattern: gainDB)]
+    }
+
     /// Builds the 10-byte rumble output report.
     static func rumbleReport(intensity: UInt16, leftSpeed: UInt16, leftGain: Int8,
                              rightSpeed: UInt16, rightGain: Int8) -> [UInt8] {
