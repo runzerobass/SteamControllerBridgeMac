@@ -170,7 +170,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             status += " — ⚠ kb/m bindings need Accessibility permission"
         }
 
-        let bridging = bridgeEnabled && gamepad.isActive && connection.isConnected
+        // Bridging = actively translating input; kb/m-only output (no
+        // virtual pad yet) still counts.
+        let bridging = bridgeEnabled && connection.isConnected
         statusItem.update(statusText: status,
                           bridging: bridging,
                           bridgeEnabled: bridgeEnabled,

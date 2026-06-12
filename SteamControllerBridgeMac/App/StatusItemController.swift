@@ -57,11 +57,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         toggleItem.title = bridgeEnabled ? "Disable Bridge" : "Enable Bridge"
         rawLogItem.state = rawLogging ? .on : .off
         permissionItem.isHidden = !permissionNeeded
+        statusItem.button?.image = bridging ? Self.bridgingIcon : Self.idleIcon
     }
 
     /// The Steam Controller outline as a template image, so it follows the
     /// menu bar's light/dark appearance and highlight state.
-    private static func menuBarIcon() -> NSImage {
+    private static let idleIcon: NSImage = {
         if let icon = NSImage(named: "MenuBarIcon") {
             icon.isTemplate = true
             icon.size = NSSize(width: 18, height: 18)
@@ -70,7 +71,26 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
         return NSImage(systemSymbolName: "gamecontroller",
                        accessibilityDescription: "Steam Controller Bridge")!
-    }
+    }()
+
+    /// The outline plus a green status dot. Color survives because this is
+    /// not a template image; the outline is tinted with labelColor at draw
+    /// time, which resolves against the menu bar's current appearance.
+    private static let bridgingIcon: NSImage = {
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size, flipped: false) { rect in
+            idleIcon.draw(in: rect)
+            NSColor.labelColor.set()
+            rect.fill(using: .sourceAtop)
+
+            let dot = NSRect(x: rect.maxX - 7, y: 0, width: 7, height: 7)
+            NSColor.systemGreen.setFill()
+            NSBezierPath(ovalIn: dot).fill()
+            return true
+        }
+        image.accessibilityDescription = "Steam Controller Bridge (active)"
+        return image
+    }()
 
     @objc private func toggleBridge() {
         onToggleBridge?()
