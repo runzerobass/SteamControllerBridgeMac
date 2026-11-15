@@ -32,6 +32,7 @@ final class MappingEngine {
     private var bindings: [ResolvedBinding] = []
     private var turboInterval = 0.08
     private var stickDeadZone = 2500
+    private var yAxisUpPositive = true
     private var padSticksEnabled = true
     private var padDeadZone = 800
     private var padSensitivity = 100
@@ -103,6 +104,7 @@ final class MappingEngine {
     private let padTickTravel = 1400
     private let padTickGainDB: Int8 = -24
     private let padTickMinInterval = 0.012
+    private var padHapticsEnabled = true
     private struct PadTickState {
         var wasTouched = false
         var lastX = 0
@@ -146,6 +148,7 @@ final class MappingEngine {
     }
 
     func apply(_ profile: Profile) {
+        resetTransientState()
         var resolved: [ResolvedBinding] = []
         let map = profile.bindings ?? Profile.defaultProfile.bindings!
         for (key, binding) in map {
@@ -163,6 +166,7 @@ final class MappingEngine {
         turboInterval = Double(min(max(profile.turboIntervalMs ?? 80, 25), 500)) / 1000.0
 
         stickDeadZone = min(max(profile.sticks?.deadZone ?? 2500, 0), 16000)
+        yAxisUpPositive = profile.sticks?.yAxisUpPositive ?? true
         padSticksEnabled = profile.padSticks?.enabled ?? true
         padDeadZone = profile.padSticks?.deadZone ?? 800
         padSensitivity = profile.padSticks?.sensitivityPercent ?? 100
@@ -188,6 +192,7 @@ final class MappingEngine {
         gyroDeadZone = profile.gyro?.deadZone ?? 45
         gyroSensitivity = min(max(profile.gyro?.sensitivity ?? 26, 1), 80)
         gyroMouseSensitivity = profile.gyro?.mouseSensitivity ?? 0.018
+        padHapticsEnabled = profile.padHaptics ?? true
 
         if padMouseEnabled || stickMouseEnabled || (gyroEnabled && gyroToMouse) {
             usesKeyboardMouse = true
@@ -199,6 +204,18 @@ final class MappingEngine {
                 if case .mouse = action { usesKeyboardMouse = true }
             }
         }
+    }
+
+    /// Clears per-frame tracking (latches, pad-mouse anchors, gyro bias) so
+    /// a profile switch mid-input can't leave a key latched or fling the
+    /// cursor from a stale pad anchor.
+    private func resetTransientState() {
+        stickKeyLatches = (DirectionLatch(), DirectionLatch(), DirectionLatch(), DirectionLatch())
+        padMouseWasTouched = false
+        leftPadTickState = PadTickState()
+        rightPadTickState = PadTickState()
+        gyroWasActive = false
+        lastMapTime = nil
     }
 
     func map(_ input: InputState) -> MappedOutput {
@@ -230,12 +247,14 @@ final class MappingEngine {
 
         // Trackpad tick haptics: a quiet click on touch-down and per unit of
         // finger travel, recreating the lizard-mode feel.
-        output.leftPadTick = padTick(&leftPadTickState, now: now,
-                                     touched: input.buttons.contains(.lPadActive),
-                                     x: Int(input.leftPadX), y: Int(input.leftPadY))
-        output.rightPadTick = padTick(&rightPadTickState, now: now,
-                                      touched: input.buttons.contains(.rPadActive),
-                                      x: Int(input.rightPadX), y: Int(input.rightPadY))
+        if padHapticsEnabled {
+            output.leftPadTick = padTick(&leftPadTickState, now: now,
+                                         touched: input.buttons.contains(.lPadActive),
+                                         x: Int(input.leftPadX), y: Int(input.leftPadY))
+            output.rightPadTick = padTick(&rightPadTickState, now: now,
+                                          touched: input.buttons.contains(.rPadActive),
+                                          x: Int(input.rightPadX), y: Int(input.rightPadY))
+        }
 
         // Pad-as-mouse: laptop-trackpad-style cursor deltas from finger travel.
         if padMouseEnabled {
@@ -327,9 +346,9 @@ final class MappingEngine {
         report.buttons = buttons
         report.hat = hatValue(up: dpad.up, down: dpad.down, left: dpad.left, right: dpad.right)
         report.leftStickX = Int16(clamping: leftX)
-        report.leftStickY = flipY(Int16(clamping: leftY))
+        report.leftStickY = outputY(Int16(clamping: leftY))
         report.rightStickX = Int16(clamping: rightX)
-        report.rightStickY = flipY(Int16(clamping: rightY))
+        report.rightStickY = outputY(Int16(clamping: rightY))
         output.report = report
         return output
     }
@@ -456,8 +475,12 @@ final class MappingEngine {
         }
     }
 
-    /// Controller axes are up-positive; HID Y axes are down-positive.
-    private func flipY(_ value: Int16) -> Int16 {
-        value == .min ? .max : -value
+    /// Controller axes are up-positive. The HID convention is down-positive
+    /// (native SDL games, browsers), but Wine's XInput (e.g. games under
+    /// CrossOver) reads the HID value as-is, so up-positive is the default
+    /// and the profile can switch back.
+    private func outputY(_ value: Int16) -> Int16 {
+        guard !yAxisUpPositive else { return value }
+        return value == .min ? .max : -value
     }
 }

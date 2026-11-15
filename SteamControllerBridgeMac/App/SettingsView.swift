@@ -10,12 +10,14 @@ struct EditableProfile {
     var bindings: [PhysicalInput: Row] = [:]
     var turboIntervalMs = 80.0
     var stickDeadZone = 2500.0
+    var yAxisUpPositive = true
     var padSticksEnabled = true
     var padDeadZone = 800.0
     var padSensitivity = 100.0
     var padMouseEnabled = false
     var padMouseRight = true
     var padMouseDivisor = 65.0
+    var padHaptics = true
     var stickKeysEnabled = false
     var stickKeysLeft = true
     var stickKeysDeadZone = 1500.0
@@ -45,12 +47,14 @@ struct EditableProfile {
         }
         turboIntervalMs = Double(profile.turboIntervalMs ?? 80)
         stickDeadZone = Double(profile.sticks?.deadZone ?? 2500)
+        yAxisUpPositive = profile.sticks?.yAxisUpPositive ?? true
         padSticksEnabled = profile.padSticks?.enabled ?? true
         padDeadZone = Double(profile.padSticks?.deadZone ?? 800)
         padSensitivity = Double(profile.padSticks?.sensitivityPercent ?? 100)
         padMouseEnabled = profile.padMouse?.enabled ?? false
         padMouseRight = (profile.padMouse?.pad ?? "right") != "left"
         padMouseDivisor = Double(profile.padMouse?.sensitivityDivisor ?? 65)
+        padHaptics = profile.padHaptics ?? true
         stickKeysEnabled = profile.stickKeys?.enabled ?? false
         stickKeysLeft = (profile.stickKeys?.stick ?? "left") != "right"
         stickKeysDeadZone = Double(profile.stickKeys?.deadZone ?? 1500)
@@ -83,20 +87,22 @@ struct EditableProfile {
             name: name,
             turboIntervalMs: Int(turboIntervalMs),
             bindings: profileBindings,
-            sticks: Profile.Sticks(deadZone: Int(stickDeadZone)),
+            sticks: Profile.Sticks(deadZone: Int(stickDeadZone),
+                                   yAxisUpPositive: yAxisUpPositive),
             padSticks: Profile.PadSticks(enabled: padSticksEnabled,
                                          deadZone: Int(padDeadZone),
                                          sensitivityPercent: Int(padSensitivity)),
             padMouse: Profile.PadMouse(enabled: padMouseEnabled,
                                        pad: padMouseRight ? "right" : "left",
                                        sensitivityDivisor: Int(padMouseDivisor)),
+            padHaptics: padHaptics,
             stickKeys: Profile.StickKeys(enabled: stickKeysEnabled,
                                          stick: stickKeysLeft ? "left" : "right",
                                          deadZone: Int(stickKeysDeadZone),
-                                         up: OutputAction(string: stickKeyUp) ?? .none,
-                                         down: OutputAction(string: stickKeyDown) ?? .none,
-                                         left: OutputAction(string: stickKeyLeft) ?? .none,
-                                         right: OutputAction(string: stickKeyRight) ?? .none),
+                                         up: OutputAction(string: stickKeyUp) ?? OutputAction.none,
+                                         down: OutputAction(string: stickKeyDown) ?? OutputAction.none,
+                                         left: OutputAction(string: stickKeyLeft) ?? OutputAction.none,
+                                         right: OutputAction(string: stickKeyRight) ?? OutputAction.none),
             stickMouse: Profile.StickMouse(enabled: stickMouseEnabled,
                                            stick: stickMouseRight ? "right" : "left",
                                            deadZone: Int(stickMouseDeadZone),
@@ -152,8 +158,10 @@ struct SettingsView: View {
     @State private var profileSelection = ""
     @State private var userProfiles = ProfileStore.listUserProfiles()
     private let onSave: (Profile) -> Void
+    private let monitor: LiveInputMonitor
 
-    init(profile: Profile, onSave: @escaping (Profile) -> Void) {
+    init(profile: Profile, monitor: LiveInputMonitor, onSave: @escaping (Profile) -> Void) {
+        self.monitor = monitor
         _edit = State(initialValue: EditableProfile(profile))
         _profileName = State(initialValue: profile.name ?? "Custom")
         self.onSave = onSave
@@ -186,12 +194,13 @@ struct SettingsView: View {
                 buttonsTab.tabItem { Text("Buttons") }
                 sticksPadsTab.tabItem { Text("Sticks & Pads") }
                 gyroTab.tabItem { Text("Gyro") }
+                ControllerTestView(monitor: monitor).tabItem { Text("Test Controls") }
             }
             .padding(8)
             Divider()
             footer
         }
-        .frame(width: 600, height: 660)
+        .frame(width: 620, height: 720)
     }
 
     private var presetBar: some View {
@@ -302,11 +311,18 @@ struct SettingsView: View {
         Form {
             Section("Joysticks") {
                 slider("Dead zone (radial, rescaled)", $edit.stickDeadZone, 0...10000, "%.0f")
+                Picker("Virtual pad Y axis", selection: $edit.yAxisUpPositive) {
+                    Text("Up is positive (XInput / CrossOver games)").tag(true)
+                    Text("Down is positive (HID standard: native SDL, browsers)").tag(false)
+                }
             }
             Section("Trackpads as Sticks") {
                 Toggle("Enabled (pad drives its stick while touched)", isOn: $edit.padSticksEnabled)
                 slider("Dead zone", $edit.padDeadZone, 0...8000, "%.0f")
                 slider("Sensitivity %", $edit.padSensitivity, 25...300, "%.0f")
+            }
+            Section("Trackpad Haptics") {
+                Toggle("Tick on touch and finger travel", isOn: $edit.padHaptics)
             }
             Section("Trackpad as Mouse") {
                 Toggle("Enabled (overrides stick duty for that pad)", isOn: $edit.padMouseEnabled)

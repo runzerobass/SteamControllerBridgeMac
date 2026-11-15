@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 
 /// The menu bar item: bridge toggle, status line, debug raw-report logging,
 /// permission shortcut, quit.
@@ -9,6 +10,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     var onOpenSettings: (() -> Void)?
     var onEditMappings: (() -> Void)?
     var onReloadMappings: (() -> Void)?
+    /// Called just before the menu opens, so status reflects permission
+    /// changes made in System Settings since the last refresh.
+    var onMenuWillOpen: (() -> Void)?
 
     private let statusItem: NSStatusItem
     private let statusLine = NSMenuItem(title: "Starting…", action: nil, keyEquivalent: "")
@@ -16,6 +20,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let rawLogItem = NSMenuItem(title: "Log Raw Reports", action: #selector(toggleRawLogging), keyEquivalent: "")
     private let permissionItem = NSMenuItem(title: "Open Input Monitoring Settings…",
                                             action: #selector(openPermissionSettings), keyEquivalent: "")
+    private let launchAtLoginItem = NSMenuItem(title: "Launch at Login",
+                                               action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
 
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -45,10 +51,18 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         permissionItem.target = self
         permissionItem.isHidden = true
         menu.addItem(permissionItem)
+        launchAtLoginItem.target = self
+        menu.addItem(launchAtLoginItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Steam Controller Bridge",
                                 action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.delegate = self
         statusItem.menu = menu
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        launchAtLoginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        onMenuWillOpen?()
     }
 
     func update(statusText: String, bridging: Bool, bridgeEnabled: Bool,
@@ -110,6 +124,25 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func reloadMappings() {
         onReloadMappings?()
+    }
+
+    @objc private func toggleLaunchAtLogin() {
+        let service = SMAppService.mainApp
+        do {
+            if service.status == .enabled {
+                try service.unregister()
+            } else {
+                try service.register()
+            }
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.messageText = "Couldn't change Launch at Login"
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+        }
+        if service.status == .requiresApproval {
+            SMAppService.openSystemSettingsLoginItems()
+        }
     }
 
     @objc private func openPermissionSettings() {

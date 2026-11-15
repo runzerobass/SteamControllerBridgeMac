@@ -3,7 +3,16 @@ import Foundation
 /// The virtual pad's HID report descriptor and input report packing.
 ///
 /// Input report ID 1 (13-byte payload): 16 buttons, dpad hat, four 16-bit
-/// stick axes (X/Y/Z/Rz), two 8-bit trigger axes (Rx/Ry).
+/// stick axes (X/Y = left stick, Rx/Ry = right stick), two 8-bit trigger
+/// axes (Z = LT, Rz = RT).
+///
+/// Axis usages and button order follow the Xbox 360 HID convention, which
+/// is what SDL's fallback mapping assumes for unknown pads (SDL sorts axes
+/// by usage: a0 X, a1 Y, a2 Z, a3 Rx, a4 Ry, a5 Rz ->
+/// "leftx:a0,lefty:a1,lefttrigger:a2,rightx:a3,righty:a4,righttrigger:a5",
+/// buttons "a:b0,b:b1,x:b2,y:b3,leftshoulder:b4,rightshoulder:b5,back:b6,
+/// start:b7,leftstick:b8,rightstick:b9,guide:b10"). The previous X/Y/Z/Rz
+/// stick layout made SDL games read the triggers as the right stick.
 /// Output report ID 2: 8 vendor bytes, reserved as a future rumble channel.
 enum GamepadDescriptor {
     /// Generic (community pool) VID/PID, deliberately not a known Xbox/PS pair:
@@ -43,17 +52,17 @@ enum GamepadDescriptor {
         0x75, 0x04,        //   Report Size (4)
         0x95, 0x01,        //   Report Count (1)
         0x81, 0x03,        //   Input (Const) — pad to byte boundary
-        0x09, 0x30,        //   Usage (X)
-        0x09, 0x31,        //   Usage (Y)
-        0x09, 0x32,        //   Usage (Z)
-        0x09, 0x35,        //   Usage (Rz)
+        0x09, 0x30,        //   Usage (X)  — left stick X
+        0x09, 0x31,        //   Usage (Y)  — left stick Y
+        0x09, 0x33,        //   Usage (Rx) — right stick X
+        0x09, 0x34,        //   Usage (Ry) — right stick Y
         0x16, 0x00, 0x80,  //   Logical Minimum (-32768)
         0x26, 0xFF, 0x7F,  //   Logical Maximum (32767)
         0x75, 0x10,        //   Report Size (16)
         0x95, 0x04,        //   Report Count (4)
         0x81, 0x02,        //   Input (Data,Var,Abs)
-        0x09, 0x33,        //   Usage (Rx)
-        0x09, 0x34,        //   Usage (Ry)
+        0x09, 0x32,        //   Usage (Z)  — left trigger
+        0x09, 0x35,        //   Usage (Rz) — right trigger
         0x15, 0x00,        //   Logical Minimum (0)
         0x26, 0xFF, 0x00,  //   Logical Maximum (255)
         0x75, 0x08,        //   Report Size (8)
@@ -83,9 +92,10 @@ struct GamepadReport: Equatable {
         static let rightBumper = Buttons(rawValue: 1 << 5)
         static let back        = Buttons(rawValue: 1 << 6)
         static let start       = Buttons(rawValue: 1 << 7)
-        static let guide       = Buttons(rawValue: 1 << 8)
-        static let leftThumb   = Buttons(rawValue: 1 << 9)
-        static let rightThumb  = Buttons(rawValue: 1 << 10)
+        // Stick clicks before Guide, matching SDL's default xinput mapping.
+        static let leftThumb   = Buttons(rawValue: 1 << 8)
+        static let rightThumb  = Buttons(rawValue: 1 << 9)
+        static let guide       = Buttons(rawValue: 1 << 10)
     }
 
     var buttons: Buttons = []
