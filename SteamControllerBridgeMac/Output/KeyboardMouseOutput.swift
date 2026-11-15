@@ -24,15 +24,30 @@ final class KeyboardMouseOutput {
 
     func releaseAll() {
         apply(keys: [], mouseButtons: [])
+        resetMotion()
     }
+
+    /// Fractional cursor motion not yet emitted. Slow stick/gyro motion is
+    /// often well under a pixel per report; without carrying the remainder
+    /// forward it would be lost (or rounded unevenly) and fine aim would
+    /// feel sticky.
+    private var pendingDX = 0.0
+    private var pendingDY = 0.0
 
     /// Moves the cursor by a relative delta. Emits drag events while a
     /// mouse button is held so click-drag works.
     func moveMouse(dx: Double, dy: Double) {
-        guard dx != 0 || dy != 0 else { return }
+        pendingDX += dx
+        pendingDY += dy
+        let stepX = pendingDX.rounded(.towardZero)
+        let stepY = pendingDY.rounded(.towardZero)
+        guard stepX != 0 || stepY != 0 else { return }
+        pendingDX -= stepX
+        pendingDY -= stepY
+
         let source = CGEventSource(stateID: .hidSystemState)
         let current = CGEvent(source: nil)?.location ?? .zero
-        let position = CGPoint(x: current.x + dx, y: current.y + dy)
+        let position = CGPoint(x: current.x + stepX, y: current.y + stepY)
 
         let type: CGEventType
         let button: CGMouseButton
@@ -45,9 +60,20 @@ final class KeyboardMouseOutput {
         } else {
             (type, button) = (.mouseMoved, .left)
         }
-        CGEvent(mouseEventSource: source, mouseType: type,
-                mouseCursorPosition: position, mouseButton: button)?
-            .post(tap: .cghidEventTap)
+        guard let event = CGEvent(mouseEventSource: source, mouseType: type,
+                                  mouseCursorPosition: position, mouseButton: button) else { return }
+        // Games that capture the mouse (cursor locked, e.g. FPS camera
+        // look) read the relative delta fields, not the absolute position.
+        event.setIntegerValueField(.mouseEventDeltaX, value: Int64(stepX))
+        event.setIntegerValueField(.mouseEventDeltaY, value: Int64(stepY))
+        event.post(tap: .cghidEventTap)
+    }
+
+    /// Drops any sub-pixel remainder (e.g. when the bridge stops) so stale
+    /// motion doesn't leak into the next session.
+    func resetMotion() {
+        pendingDX = 0
+        pendingDY = 0
     }
 
     private func postKey(_ code: CGKeyCode, down: Bool) {

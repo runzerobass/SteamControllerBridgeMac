@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let gamepad = VirtualGamepad()
     private let engine = MappingEngine(profile: ProfileStore.load())
     private let keyboardMouse = KeyboardMouseOutput()
+    private let monitor = LiveInputMonitor()
     private var statusItem: StatusItemController!
     private var settingsWindow: NSWindow?
 
@@ -17,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var rawLogging = false
     private var connection: SteamControllerDevice.ConnectionState = .stopped
     private var gamepadError: String?
+    /// Last report forwarded to the virtual pad; reports are only sent on change.
+    private var lastSentReport: GamepadReport?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = StatusItemController()
@@ -27,14 +30,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ProfileStore.writeDefaultIfMissing()
             NSWorkspace.shared.open(ProfileStore.url)
         }
+        statusItem.onMenuWillOpen = { [weak self] in self?.refreshUI() }
         statusItem.onReloadMappings = { [weak self] in
             guard let self else { return }
             keyboardMouse.releaseAll() // old bindings may hold keys
-            engine.apply(ProfileStore.load())
+            let profile = ProfileStore.load()
+            engine.apply(profile)
+            monitor.appliedProfile = profile
             promptAccessibilityIfNeeded()
             refreshUI()
         }
 
+        monitor.appliedProfile = ProfileStore.load()
         wirePipeline()
 
         if !PermissionsCoordinator.inputMonitoringGranted {
@@ -58,11 +65,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func wirePipeline() {
         // Runs on the main thread (the controller is run-loop scheduled):
         // parse → map → forward only on change.
-        var lastSent: GamepadReport?
-        controller.onInput = { [gamepad, engine, keyboardMouse, controller] state in
+        controller.onInput = { [weak self, gamepad, engine, keyboardMouse, controller, monitor] state in
             let output = engine.map(state)
-            if output.report != lastSent {
-                lastSent = output.report
+            monitor.record(input: state, output: output)
+            if output.report != self?.lastSentReport {
+                self?.lastSentReport = output.report
                 gamepad.send(output.report)
             }
             keyboardMouse.apply(keys: output.keys, mouseButtons: output.mouseButtons)
@@ -75,9 +82,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         controller.onStateChange = { [weak self] state in
-            self?.connection = state
-            self?.refreshUI()
+            guard let self else { return }
+            if !state.isConnected {
+                neutralizeOutputs()
+            }
+            connection = state
+            refreshUI()
         }
+    }
+
+    /// Whatever was held when the controller vanished must not stay held:
+    /// release kb/m output and center the virtual pad.
+    private func neutralizeOutputs() {
+        keyboardMouse.releaseAll()
+        if gamepad.isActive, lastSentReport != GamepadReport() {
+            gamepad.send(GamepadReport())
+        }
+        lastSentReport = nil
     }
 
     private func toggleBridge() {
@@ -115,7 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func openSettings() {
         // Rebuild each open so the editor always reflects the saved file.
-        let view = SettingsView(profile: ProfileStore.load()) { [weak self] profile in
+        let view = SettingsView(profile: ProfileStore.load(), monitor: monitor) { [weak self] profile in
             self?.saveProfile(profile)
         }
         let window = settingsWindow ?? {
@@ -141,6 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         keyboardMouse.releaseAll() // old bindings may hold keys
         engine.apply(profile)
+        monitor.appliedProfile = profile
         promptAccessibilityIfNeeded()
         refreshUI()
     }
@@ -186,6 +208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Bridging = actively translating input; kb/m-only output (no
         // virtual pad yet) still counts.
         let bridging = bridgeEnabled && connection.isConnected
+        monitor.setConnection(status, connected: bridging)
         statusItem.update(statusText: status,
                           bridging: bridging,
                           bridgeEnabled: bridgeEnabled,

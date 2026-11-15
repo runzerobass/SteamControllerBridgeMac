@@ -124,6 +124,10 @@ struct Profile: Codable {
         /// Radial deadzone for the physical sticks' virtual-pad output
         /// (raw units, rescaled so motion ramps smoothly from the edge).
         var deadZone: Int?
+        /// Virtual pad stick Y direction: true (default) = up is positive,
+        /// as XInput games under Wine/CrossOver expect; false = HID
+        /// standard (down is positive) for native SDL games and browsers.
+        var yAxisUpPositive: Bool?
     }
 
     struct PadSticks: Codable {
@@ -192,6 +196,8 @@ struct Profile: Codable {
     var sticks: Sticks?
     var padSticks: PadSticks?
     var padMouse: PadMouse?
+    /// Lizard-mode-style haptic ticks on trackpad touch and travel (default on).
+    var padHaptics: Bool?
     var stickKeys: StickKeys?
     var stickMouse: StickMouse?
     var gyro: Gyro?
@@ -220,9 +226,10 @@ struct Profile: Codable {
             name: "Default",
             turboIntervalMs: 80,
             bindings: bindings,
-            sticks: Sticks(deadZone: 2500),
+            sticks: Sticks(deadZone: 2500, yAxisUpPositive: true),
             padSticks: PadSticks(enabled: true, deadZone: 800, sensitivityPercent: 100),
             padMouse: PadMouse(enabled: false, pad: "right", sensitivityDivisor: 65),
+            padHaptics: true,
             stickKeys: StickKeys(enabled: false, stick: "left", deadZone: 1500,
                                  up: .key(KeyCodes.byName["w"]!), down: .key(KeyCodes.byName["s"]!),
                                  left: .key(KeyCodes.byName["a"]!), right: .key(KeyCodes.byName["d"]!)),
